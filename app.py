@@ -1,17 +1,8 @@
-#!/usr/bin/env python3
-"""
-Proxy Location Distance Checker - Web UI
-Uses Mapbox for geocoding, ip-api for proxy detection
-Run with: python app.py
-Then open: http://localhost:5000
-"""
-
 from flask import Flask, render_template_string, request, jsonify
 import re
 import math
 import requests
-import webbrowser
-import threading
+import os
 
 app = Flask(__name__)
 
@@ -219,12 +210,11 @@ HTML_TEMPLATE = '''
             text-align: center;
         }
         
-        .assessment.excellent { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
-        .assessment.good { background: rgba(0, 255, 136, 0.15); color: #00ff88; }
-        .assessment.fair { background: rgba(255, 220, 0, 0.2); color: #ffdc00; }
-        .assessment.acceptable { background: rgba(255, 165, 0, 0.2); color: #ffa500; }
-        .assessment.poor { background: rgba(255, 71, 87, 0.2); color: #ff4757; }
-        .assessment.bad { background: rgba(255, 0, 0, 0.2); color: #ff0000; }
+        .assessment.gold { background: rgba(255, 215, 0, 0.3); color: #ffd700; border: 1px solid #ffd700; }
+        .assessment.verygood { background: rgba(0, 255, 136, 0.25); color: #00ff88; }
+        .assessment.decent { background: rgba(144, 238, 144, 0.25); color: #90ee90; }
+        .assessment.notbest { background: rgba(60, 179, 113, 0.25); color: #3cb371; }
+        .assessment.donotuse { background: rgba(255, 0, 0, 0.25); color: #ff4444; border: 1px solid #ff4444; }
         
         .detection-badge {
             display: inline-block;
@@ -398,12 +388,10 @@ HTML_TEMPLATE = '''
         </div>
         
         <div class="results" id="results">
-            <!-- Results will be inserted here -->
         </div>
     </div>
     
     <script>
-        // Load saved API key on page load
         window.onload = function() {
             const savedKey = localStorage.getItem('mapbox_api_key');
             if (savedKey) {
@@ -429,7 +417,6 @@ HTML_TEMPLATE = '''
                 return;
             }
             
-            // Save or clear API key
             if (saveKey) {
                 localStorage.setItem('mapbox_api_key', mapboxKey);
             } else {
@@ -468,7 +455,7 @@ HTML_TEMPLATE = '''
                         </div>
                     `;
                 } else {
-                    displayResults(data);
+                    displayResults(data, mapboxKey);
                 }
             } catch (err) {
                 resultsDiv.innerHTML = `
@@ -482,28 +469,24 @@ HTML_TEMPLATE = '''
             btn.textContent = 'Check Proxy Location';
         }
         
-        function displayResults(data) {
+        function displayResults(data, mapboxKey) {
             const resultsDiv = document.getElementById('results');
-            const mapboxKey = document.getElementById('mapboxKey').value.trim();
             
-            let assessmentClass = 'bad';
-            let assessmentText = '⛔ BAD - Far from target';
+            let assessmentClass = 'donotuse';
+            let assessmentText = '🚨❌ DO NOT USE - Too far from target ❌🚨';
             
-            if (data.distance_miles < 10) {
-                assessmentClass = 'excellent';
-                assessmentText = '🟢 EXCELLENT - Very close match (within 10 miles)';
-            } else if (data.distance_miles < 25) {
-                assessmentClass = 'good';
-                assessmentText = '🟢 GOOD - Close match (within 25 miles)';
-            } else if (data.distance_miles < 50) {
-                assessmentClass = 'fair';
-                assessmentText = '🟡 FAIR - Moderate distance (within 50 miles)';
-            } else if (data.distance_miles < 100) {
-                assessmentClass = 'acceptable';
-                assessmentText = '🟠 ACCEPTABLE - Some distance (within 100 miles)';
-            } else if (data.distance_miles < 250) {
-                assessmentClass = 'poor';
-                assessmentText = '🔴 POOR - Significant distance (within 250 miles)';
+            if (data.distance_miles <= 2) {
+                assessmentClass = 'gold';
+                assessmentText = '🏆 EXCELLENT - Gold proxy to use (within 2 miles)';
+            } else if (data.distance_miles < 5) {
+                assessmentClass = 'verygood';
+                assessmentText = '✅ VERY GOOD - Great proxy to use (within 5 miles)';
+            } else if (data.distance_miles <= 10) {
+                assessmentClass = 'decent';
+                assessmentText = '👍 DECENT - Usable proxy (within 10 miles)';
+            } else if (data.distance_miles <= 15) {
+                assessmentClass = 'notbest';
+                assessmentText = '⚠️ NOT THE BEST - Recommend trying another proxy';
             }
             
             resultsDiv.innerHTML = `
@@ -592,7 +575,6 @@ HTML_TEMPLATE = '''
             // Initialize Mapbox map
             mapboxgl.accessToken = mapboxKey;
             
-            // Calculate center point between both locations
             const centerLat = (data.target_lat + data.actual_lat) / 2;
             const centerLon = (data.target_lon + data.actual_lon) / 2;
             
@@ -606,7 +588,6 @@ HTML_TEMPLATE = '''
             map.addControl(new mapboxgl.NavigationControl());
             
             map.on('load', function() {
-                // Add line connecting the two points
                 map.addSource('route', {
                     'type': 'geojson',
                     'data': {
@@ -637,7 +618,6 @@ HTML_TEMPLATE = '''
                     }
                 });
                 
-                // Fit map to show both markers
                 const bounds = new mapboxgl.LngLatBounds();
                 bounds.extend([data.target_lon, data.target_lat]);
                 bounds.extend([data.actual_lon, data.actual_lat]);
@@ -670,7 +650,7 @@ HTML_TEMPLATE = '''
 '''
 
 
-def parse_proxy_string(proxy_string: str) -> dict:
+def parse_proxy_string(proxy_string):
     """Parse a SOAX-style proxy string."""
     result = {
         "claimed_country": None,
@@ -708,7 +688,7 @@ def parse_proxy_string(proxy_string: str) -> dict:
     return result
 
 
-def geocode_with_mapbox(address: str, api_key: str) -> dict:
+def geocode_with_mapbox(address, api_key):
     """Geocode an address using Mapbox Geocoding API."""
     url = "https://api.mapbox.com/geocoding/v5/mapbox.places/{}.json".format(
         requests.utils.quote(address)
@@ -728,7 +708,7 @@ def geocode_with_mapbox(address: str, api_key: str) -> dict:
         return None
     
     feature = data["features"][0]
-    coords = feature["geometry"]["coordinates"]  # [lon, lat]
+    coords = feature["geometry"]["coordinates"]
     
     return {
         "lat": coords[1],
@@ -737,7 +717,7 @@ def geocode_with_mapbox(address: str, api_key: str) -> dict:
     }
 
 
-def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+def haversine_distance(lat1, lon1, lat2, lon2):
     """Calculate distance between two points in miles."""
     R = 3959
     lat1_rad, lat2_rad = math.radians(lat1), math.radians(lat2)
@@ -822,47 +802,6 @@ def check():
         return jsonify({"error": f"Error: {str(e)}"})
 
 
-def open_browser():
-    """Open Chrome browser in a new window after a short delay to let server start."""
-    import time
-    import subprocess
-    import os
-    
-    time.sleep(1.5)
-    
-    url = "http://localhost:5000"
-    
-    # Chrome paths to try
-    chrome_paths = [
-        "C:/Program Files/Google/Chrome/Application/chrome.exe",
-        "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-        os.path.expandvars("%LOCALAPPDATA%/Google/Chrome/Application/chrome.exe"),
-    ]
-    
-    # Try to open Chrome with --new-window flag
-    for chrome_path in chrome_paths:
-        if os.path.exists(chrome_path):
-            try:
-                subprocess.Popen([chrome_path, "--new-window", url])
-                return
-            except:
-                continue
-    
-    # Fallback to default browser
-    webbrowser.open_new(url)
-
-
 if __name__ == '__main__':
-    print("\n" + "="*50)
-    print("  Proxy Location Checker")
-    print("="*50)
-    print("\n  Opening Chrome browser...")
-    print("  URL: http://localhost:5000")
-    print("\n  Press Ctrl+C to stop the server")
-    print("="*50 + "\n")
-    
-    # Start browser opening in background thread
-    threading.Thread(target=open_browser, daemon=True).start()
-    
-    # Start Flask server
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=False, host='0.0.0.0', port=port)
