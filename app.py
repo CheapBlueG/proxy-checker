@@ -854,19 +854,47 @@ def check():
             error_msg = ip_data['error'].get('error_message', 'Unknown error') if isinstance(ip_data['error'], dict) else ip_data['error']
             return jsonify({"error": f"IP2Location error: {error_msg}"})
         
+        # Helper function to convert various truthy values to boolean
+        def to_bool(val):
+            if val is None:
+                return False
+            if isinstance(val, bool):
+                return val
+            if isinstance(val, str):
+                return val.upper() in ['YES', 'Y', 'TRUE', '1']
+            if isinstance(val, (int, float)):
+                return val > 0
+            return False
+        
         # Extract proxy detection info from IP2Location.io response
         proxy_info_data = ip_data.get('proxy', {})
         
-        is_proxy = ip_data.get('is_proxy', False)
-        is_vpn = proxy_info_data.get('is_vpn', False)
-        is_tor = proxy_info_data.get('is_tor', False)
-        is_datacenter = proxy_info_data.get('is_data_center', False)
-        is_public_proxy = proxy_info_data.get('is_public_proxy', False)
-        is_residential = proxy_info_data.get('is_residential_proxy', False)
-        is_web_proxy = proxy_info_data.get('is_web_proxy', False)
-        proxy_type = proxy_info_data.get('proxy_type', '-')
-        threat = proxy_info_data.get('threat', '-')
-        usage_type = ip_data.get('usage_type', '-')
+        is_proxy = to_bool(ip_data.get('is_proxy'))
+        is_vpn = to_bool(proxy_info_data.get('is_vpn'))
+        is_tor = to_bool(proxy_info_data.get('is_tor'))
+        is_datacenter = to_bool(proxy_info_data.get('is_data_center'))
+        is_public_proxy = to_bool(proxy_info_data.get('is_public_proxy'))
+        is_residential = to_bool(proxy_info_data.get('is_residential_proxy'))
+        is_web_proxy = to_bool(proxy_info_data.get('is_web_proxy'))
+        proxy_type = proxy_info_data.get('proxy_type', '-') or '-'
+        threat = proxy_info_data.get('threat', '-') or '-'
+        usage_type = ip_data.get('usage_type', '-') or '-'
+        
+        # Also check proxy_type to determine specific types
+        if proxy_type and proxy_type != '-':
+            is_proxy = True  # If there's a proxy type, it's definitely a proxy
+            if proxy_type == 'VPN':
+                is_vpn = True
+            elif proxy_type == 'TOR':
+                is_tor = True
+            elif proxy_type == 'DCH':
+                is_datacenter = True
+            elif proxy_type == 'PUB':
+                is_public_proxy = True
+            elif proxy_type == 'WEB':
+                is_web_proxy = True
+            elif proxy_type == 'RES':
+                is_residential = True
         
         lat = ip_data.get('latitude', 0)
         lon = ip_data.get('longitude', 0)
