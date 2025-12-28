@@ -373,6 +373,18 @@ HTML_TEMPLATE = '''
             </div>
             
             <div class="form-group">
+                <label>
+                    IP2Location API Key 
+                    <span class="label-hint">— <a href="https://www.ip2location.io/sign-up" target="_blank" class="api-link">Get free key</a></span>
+                </label>
+                <input type="text" id="ip2locationKey" placeholder="Your IP2Location.io API key">
+                <div class="save-key">
+                    <input type="checkbox" id="saveIp2Key" checked>
+                    <label for="saveIp2Key" style="margin: 0; font-weight: normal;">Remember API key in browser</label>
+                </div>
+            </div>
+            
+            <div class="form-group">
                 <label>Proxy String</label>
                 <textarea id="proxyString" placeholder="package-327430-country-us-region-california-city-san+diego-sessionid-xxx-sessionlength-600:password@proxy.soax.com:5000"></textarea>
             </div>
@@ -397,18 +409,29 @@ HTML_TEMPLATE = '''
             if (savedKey) {
                 document.getElementById('mapboxKey').value = savedKey;
             }
+            const savedIp2Key = localStorage.getItem('ip2location_api_key');
+            if (savedIp2Key) {
+                document.getElementById('ip2locationKey').value = savedIp2Key;
+            }
         };
         
         async function checkProxy() {
             const mapboxKey = document.getElementById('mapboxKey').value.trim();
+            const ip2locationKey = document.getElementById('ip2locationKey').value.trim();
             const proxyString = document.getElementById('proxyString').value.trim();
             const targetAddress = document.getElementById('targetAddress').value.trim();
             const saveKey = document.getElementById('saveKey').checked;
+            const saveIp2Key = document.getElementById('saveIp2Key').checked;
             const resultsDiv = document.getElementById('results');
             const btn = document.getElementById('checkBtn');
             
             if (!mapboxKey) {
                 alert('Please enter your Mapbox API key');
+                return;
+            }
+            
+            if (!ip2locationKey) {
+                alert('Please enter your IP2Location API key');
                 return;
             }
             
@@ -421,6 +444,12 @@ HTML_TEMPLATE = '''
                 localStorage.setItem('mapbox_api_key', mapboxKey);
             } else {
                 localStorage.removeItem('mapbox_api_key');
+            }
+            
+            if (saveIp2Key) {
+                localStorage.setItem('ip2location_api_key', ip2locationKey);
+            } else {
+                localStorage.removeItem('ip2location_api_key');
             }
             
             btn.disabled = true;
@@ -442,7 +471,8 @@ HTML_TEMPLATE = '''
                     body: JSON.stringify({ 
                         proxy_string: proxyString, 
                         target_address: targetAddress,
-                        mapbox_key: mapboxKey
+                        mapbox_key: mapboxKey,
+                        ip2location_key: ip2locationKey
                     })
                 });
                 
@@ -515,18 +545,46 @@ HTML_TEMPLATE = '''
                 
                 <div class="card">
                     <div class="result-section">
-                        <h3>🔍 Detection Status</h3>
+                        <h3>🔍 Detection Status (via IP2Location)</h3>
                         <div class="result-row">
-                            <span class="result-label">Proxy/VPN Detected</span>
+                            <span class="result-label">Proxy Detected</span>
                             <span class="detection-badge ${data.is_proxy ? 'badge-yes' : 'badge-no'}">
                                 ${data.is_proxy ? '🚨 YES' : '✅ NO'}
                             </span>
                         </div>
                         <div class="result-row">
-                            <span class="result-label">Hosting/Datacenter</span>
-                            <span class="detection-badge ${data.is_hosting ? 'badge-yes' : 'badge-no'}">
-                                ${data.is_hosting ? '🚨 YES' : '✅ NO'}
+                            <span class="result-label">VPN</span>
+                            <span class="detection-badge ${data.is_vpn ? 'badge-yes' : 'badge-no'}">
+                                ${data.is_vpn ? '🚨 YES' : '✅ NO'}
                             </span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Datacenter/Hosting</span>
+                            <span class="detection-badge ${data.is_datacenter ? 'badge-yes' : 'badge-no'}">
+                                ${data.is_datacenter ? '🚨 YES' : '✅ NO'}
+                            </span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">TOR</span>
+                            <span class="detection-badge ${data.is_tor ? 'badge-yes' : 'badge-no'}">
+                                ${data.is_tor ? '🚨 YES' : '✅ NO'}
+                            </span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Public Proxy</span>
+                            <span class="detection-badge ${data.is_public_proxy ? 'badge-yes' : 'badge-no'}">
+                                ${data.is_public_proxy ? '🚨 YES' : '✅ NO'}
+                            </span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Residential Proxy</span>
+                            <span class="detection-badge ${data.is_residential ? 'badge-yes' : 'badge-no'}">
+                                ${data.is_residential ? '🚨 YES' : '✅ NO'}
+                            </span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Proxy Type</span>
+                            <span class="result-value">${data.proxy_type}</span>
                         </div>
                     </div>
                     
@@ -547,7 +605,7 @@ HTML_TEMPLATE = '''
                     </div>
                     
                     <div class="result-section">
-                        <h3>🌐 Proxy Exit Location (via ip-api)</h3>
+                        <h3>🌐 Proxy Exit Location (via IP2Location)</h3>
                         <div class="result-row">
                             <span class="result-label">IP Address</span>
                             <span class="result-value">${data.ip}</span>
@@ -741,6 +799,7 @@ def check():
     proxy_string = data.get('proxy_string', '')
     target_address = data.get('target_address', '')
     mapbox_key = data.get('mapbox_key', '')
+    ip2location_key = data.get('ip2location_key', '')
     
     try:
         # Parse proxy string
@@ -755,22 +814,43 @@ def check():
         proxy_url = f"http://{proxy_info['username']}:{proxy_info['password']}@{proxy_info['host']}:{proxy_info['port']}"
         proxies = {"http": proxy_url, "https": proxy_url}
         
-        # Check IP through proxy using ip-api
-        response = requests.get(
-            "http://ip-api.com/json/?fields=status,message,query,country,countryCode,region,regionName,city,lat,lon,isp,org,as,proxy,hosting",
-            proxies=proxies,
-            timeout=30
+        # Step 1: Get the proxy's exit IP by making a request through the proxy
+        try:
+            ip_response = requests.get("https://api.ipify.org?format=json", proxies=proxies, timeout=30)
+            proxy_ip = ip_response.json().get('ip')
+        except:
+            # Fallback to another service
+            ip_response = requests.get("http://httpbin.org/ip", proxies=proxies, timeout=30)
+            proxy_ip = ip_response.json().get('origin', '').split(',')[0].strip()
+        
+        if not proxy_ip:
+            return jsonify({"error": "Could not determine proxy exit IP"})
+        
+        # Step 2: Query IP2Location.io with the proxy IP (direct request, not through proxy)
+        ip2_response = requests.get(
+            f"https://api.ip2location.io/?key={ip2location_key}&ip={proxy_ip}",
+            timeout=10
         )
         
-        ip_data = response.json()
+        ip_data = ip2_response.json()
         
-        if ip_data.get("status") != "success":
-            return jsonify({"error": f"IP API error: {ip_data.get('message', 'Unknown error')}"})
+        if 'error' in ip_data:
+            return jsonify({"error": f"IP2Location error: {ip_data['error'].get('error_message', 'Unknown error')}"})
+        
+        # Extract proxy detection info
+        proxy_info_data = ip_data.get('proxy', {})
+        is_proxy = ip_data.get('is_proxy', False)
+        is_vpn = proxy_info_data.get('is_vpn', False)
+        is_tor = proxy_info_data.get('is_tor', False)
+        is_datacenter = proxy_info_data.get('is_data_center', False)
+        is_public_proxy = proxy_info_data.get('is_public_proxy', False)
+        is_residential = proxy_info_data.get('is_residential_proxy', False)
+        proxy_type = proxy_info_data.get('proxy_type', '-')
         
         # Calculate distance
         distance = haversine_distance(
             target_coords['lat'], target_coords['lon'],
-            ip_data['lat'], ip_data['lon']
+            ip_data.get('latitude', 0), ip_data.get('longitude', 0)
         )
         
         return jsonify({
@@ -778,16 +858,21 @@ def check():
             "target_resolved": target_coords['place_name'],
             "target_lat": target_coords['lat'],
             "target_lon": target_coords['lon'],
-            "ip": ip_data['query'],
-            "country": ip_data['country'],
-            "region": ip_data['regionName'],
-            "city": ip_data['city'],
-            "actual_lat": ip_data['lat'],
-            "actual_lon": ip_data['lon'],
-            "isp": ip_data['isp'],
-            "org": ip_data['org'],
-            "is_proxy": ip_data.get('proxy', False),
-            "is_hosting": ip_data.get('hosting', False),
+            "ip": proxy_ip,
+            "country": ip_data.get('country_name', 'Unknown'),
+            "region": ip_data.get('region_name', 'Unknown'),
+            "city": ip_data.get('city_name', 'Unknown'),
+            "actual_lat": ip_data.get('latitude', 0),
+            "actual_lon": ip_data.get('longitude', 0),
+            "isp": ip_data.get('isp', 'Unknown'),
+            "org": ip_data.get('as', 'Unknown'),
+            "is_proxy": is_proxy,
+            "is_vpn": is_vpn,
+            "is_tor": is_tor,
+            "is_datacenter": is_datacenter,
+            "is_public_proxy": is_public_proxy,
+            "is_residential": is_residential,
+            "proxy_type": proxy_type,
             "distance_miles": distance,
             "distance_km": distance * 1.60934,
         })
@@ -805,3 +890,4 @@ def check():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
