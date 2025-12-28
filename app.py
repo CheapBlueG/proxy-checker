@@ -589,6 +589,12 @@ HTML_TEMPLATE = '''
                             </span>
                         </div>
                         <div class="result-row">
+                            <span class="result-label">Web Crawler</span>
+                            <span class="detection-badge ${data.is_web_crawler ? 'badge-yes' : 'badge-no'}">
+                                ${data.is_web_crawler ? '🚨 YES' : '✅ NO'}
+                            </span>
+                        </div>
+                        <div class="result-row">
                             <span class="result-label">Proxy Type</span>
                             <span class="result-value">${data.proxy_type}</span>
                         </div>
@@ -599,6 +605,18 @@ HTML_TEMPLATE = '''
                         <div class="result-row">
                             <span class="result-label">Threat</span>
                             <span class="result-value">${data.threat}</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Provider</span>
+                            <span class="result-value">${data.provider}</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Last Seen (days)</span>
+                            <span class="result-value">${data.last_seen}</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Fraud Score</span>
+                            <span class="result-value">${data.fraud_score}</span>
                         </div>
                     </div>
                     
@@ -854,47 +872,25 @@ def check():
             error_msg = ip_data['error'].get('error_message', 'Unknown error') if isinstance(ip_data['error'], dict) else ip_data['error']
             return jsonify({"error": f"IP2Location error: {error_msg}"})
         
-        # Helper function to convert various truthy values to boolean
-        def to_bool(val):
-            if val is None:
-                return False
-            if isinstance(val, bool):
-                return val
-            if isinstance(val, str):
-                return val.upper() in ['YES', 'Y', 'TRUE', '1']
-            if isinstance(val, (int, float)):
-                return val > 0
-            return False
+        # Get the proxy object from response
+        proxy_obj = ip_data.get('proxy', {}) or {}
         
-        # Extract proxy detection info from IP2Location.io response
-        proxy_info_data = ip_data.get('proxy', {})
+        # Read values directly - API returns actual booleans
+        is_proxy = ip_data.get('is_proxy', False) == True
+        is_vpn = proxy_obj.get('is_vpn', False) == True
+        is_tor = proxy_obj.get('is_tor', False) == True
+        is_datacenter = proxy_obj.get('is_data_center', False) == True
+        is_public_proxy = proxy_obj.get('is_public_proxy', False) == True
+        is_residential = proxy_obj.get('is_residential_proxy', False) == True
+        is_web_proxy = proxy_obj.get('is_web_proxy', False) == True
+        is_web_crawler = proxy_obj.get('is_web_crawler', False) == True
         
-        is_proxy = to_bool(ip_data.get('is_proxy'))
-        is_vpn = to_bool(proxy_info_data.get('is_vpn'))
-        is_tor = to_bool(proxy_info_data.get('is_tor'))
-        is_datacenter = to_bool(proxy_info_data.get('is_data_center'))
-        is_public_proxy = to_bool(proxy_info_data.get('is_public_proxy'))
-        is_residential = to_bool(proxy_info_data.get('is_residential_proxy'))
-        is_web_proxy = to_bool(proxy_info_data.get('is_web_proxy'))
-        proxy_type = proxy_info_data.get('proxy_type', '-') or '-'
-        threat = proxy_info_data.get('threat', '-') or '-'
+        proxy_type = proxy_obj.get('proxy_type', '-') or '-'
+        threat = proxy_obj.get('threat', '-') or '-'
+        provider = proxy_obj.get('provider', '-') or '-'
+        last_seen = proxy_obj.get('last_seen', '-')
+        fraud_score = ip_data.get('fraud_score', '-')
         usage_type = ip_data.get('usage_type', '-') or '-'
-        
-        # Also check proxy_type to determine specific types
-        if proxy_type and proxy_type != '-':
-            is_proxy = True  # If there's a proxy type, it's definitely a proxy
-            if proxy_type == 'VPN':
-                is_vpn = True
-            elif proxy_type == 'TOR':
-                is_tor = True
-            elif proxy_type == 'DCH':
-                is_datacenter = True
-            elif proxy_type == 'PUB':
-                is_public_proxy = True
-            elif proxy_type == 'WEB':
-                is_web_proxy = True
-            elif proxy_type == 'RES':
-                is_residential = True
         
         lat = ip_data.get('latitude', 0)
         lon = ip_data.get('longitude', 0)
@@ -925,9 +921,13 @@ def check():
             "is_public_proxy": is_public_proxy,
             "is_residential": is_residential,
             "is_web_proxy": is_web_proxy,
+            "is_web_crawler": is_web_crawler,
             "proxy_type": proxy_type,
             "usage_type": usage_type,
             "threat": threat,
+            "provider": provider,
+            "last_seen": last_seen,
+            "fraud_score": fraud_score,
             "distance_miles": distance,
             "distance_km": distance * 1.60934,
         })
@@ -945,4 +945,3 @@ def check():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
-
