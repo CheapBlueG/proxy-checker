@@ -545,7 +545,7 @@ HTML_TEMPLATE = '''
                 
                 <div class="card">
                     <div class="result-section">
-                        <h3>🔍 Detection Status (via IP2Location)</h3>
+                        <h3>🔍 Detection Status (via IP2Location.io)</h3>
                         <div class="result-row">
                             <span class="result-label">Proxy Detected</span>
                             <span class="detection-badge ${data.is_proxy ? 'badge-yes' : 'badge-no'}">
@@ -583,8 +583,22 @@ HTML_TEMPLATE = '''
                             </span>
                         </div>
                         <div class="result-row">
+                            <span class="result-label">Web Proxy</span>
+                            <span class="detection-badge ${data.is_web_proxy ? 'badge-yes' : 'badge-no'}">
+                                ${data.is_web_proxy ? '🚨 YES' : '✅ NO'}
+                            </span>
+                        </div>
+                        <div class="result-row">
                             <span class="result-label">Proxy Type</span>
                             <span class="result-value">${data.proxy_type}</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Usage Type</span>
+                            <span class="result-value">${data.usage_type}</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Threat</span>
+                            <span class="result-value">${data.threat}</span>
                         </div>
                     </div>
                     
@@ -605,7 +619,7 @@ HTML_TEMPLATE = '''
                     </div>
                     
                     <div class="result-section">
-                        <h3>🌐 Proxy Exit Location (via IP2Location)</h3>
+                        <h3>🌐 Proxy Exit Location (via IP2Location.io)</h3>
                         <div class="result-row">
                             <span class="result-label">IP Address</span>
                             <span class="result-value">${data.ip}</span>
@@ -819,9 +833,11 @@ def check():
             ip_response = requests.get("https://api.ipify.org?format=json", proxies=proxies, timeout=30)
             proxy_ip = ip_response.json().get('ip')
         except:
-            # Fallback to another service
-            ip_response = requests.get("http://httpbin.org/ip", proxies=proxies, timeout=30)
-            proxy_ip = ip_response.json().get('origin', '').split(',')[0].strip()
+            try:
+                ip_response = requests.get("https://httpbin.org/ip", proxies=proxies, timeout=30)
+                proxy_ip = ip_response.json().get('origin', '').split(',')[0].strip()
+            except:
+                return jsonify({"error": "Could not connect through proxy"})
         
         if not proxy_ip:
             return jsonify({"error": "Could not determine proxy exit IP"})
@@ -835,22 +851,30 @@ def check():
         ip_data = ip2_response.json()
         
         if 'error' in ip_data:
-            return jsonify({"error": f"IP2Location error: {ip_data['error'].get('error_message', 'Unknown error')}"})
+            error_msg = ip_data['error'].get('error_message', 'Unknown error') if isinstance(ip_data['error'], dict) else ip_data['error']
+            return jsonify({"error": f"IP2Location error: {error_msg}"})
         
-        # Extract proxy detection info
+        # Extract proxy detection info from IP2Location.io response
         proxy_info_data = ip_data.get('proxy', {})
+        
         is_proxy = ip_data.get('is_proxy', False)
         is_vpn = proxy_info_data.get('is_vpn', False)
         is_tor = proxy_info_data.get('is_tor', False)
         is_datacenter = proxy_info_data.get('is_data_center', False)
         is_public_proxy = proxy_info_data.get('is_public_proxy', False)
         is_residential = proxy_info_data.get('is_residential_proxy', False)
+        is_web_proxy = proxy_info_data.get('is_web_proxy', False)
         proxy_type = proxy_info_data.get('proxy_type', '-')
+        threat = proxy_info_data.get('threat', '-')
+        usage_type = ip_data.get('usage_type', '-')
+        
+        lat = ip_data.get('latitude', 0)
+        lon = ip_data.get('longitude', 0)
         
         # Calculate distance
         distance = haversine_distance(
             target_coords['lat'], target_coords['lon'],
-            ip_data.get('latitude', 0), ip_data.get('longitude', 0)
+            lat, lon
         )
         
         return jsonify({
@@ -862,8 +886,8 @@ def check():
             "country": ip_data.get('country_name', 'Unknown'),
             "region": ip_data.get('region_name', 'Unknown'),
             "city": ip_data.get('city_name', 'Unknown'),
-            "actual_lat": ip_data.get('latitude', 0),
-            "actual_lon": ip_data.get('longitude', 0),
+            "actual_lat": lat,
+            "actual_lon": lon,
             "isp": ip_data.get('isp', 'Unknown'),
             "org": ip_data.get('as', 'Unknown'),
             "is_proxy": is_proxy,
@@ -872,7 +896,10 @@ def check():
             "is_datacenter": is_datacenter,
             "is_public_proxy": is_public_proxy,
             "is_residential": is_residential,
+            "is_web_proxy": is_web_proxy,
             "proxy_type": proxy_type,
+            "usage_type": usage_type,
+            "threat": threat,
             "distance_miles": distance,
             "distance_km": distance * 1.60934,
         })
