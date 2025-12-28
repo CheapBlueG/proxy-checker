@@ -621,6 +621,22 @@ HTML_TEMPLATE = '''
                     </div>
                     
                     <div class="result-section">
+                        <h3>🐛 Debug Info</h3>
+                        <div class="result-row">
+                            <span class="result-label">Has Proxy Object</span>
+                            <span class="result-value">${data.debug_has_proxy_obj}</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Raw is_proxy</span>
+                            <span class="result-value">${data.debug_is_proxy_raw}</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Proxy Object</span>
+                            <span class="result-value" style="font-size:10px;">${JSON.stringify(data.debug_proxy_obj)}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="result-section">
                         <h3>📍 Target Address (via Mapbox)</h3>
                         <div class="result-row">
                             <span class="result-label">Input</span>
@@ -873,24 +889,36 @@ def check():
             return jsonify({"error": f"IP2Location error: {error_msg}"})
         
         # Get the proxy object from response
-        proxy_obj = ip_data.get('proxy', {}) or {}
+        proxy_obj = ip_data.get('proxy') if ip_data.get('proxy') else {}
         
-        # Read values directly - API returns actual booleans
-        is_proxy = ip_data.get('is_proxy', False) == True
-        is_vpn = proxy_obj.get('is_vpn', False) == True
-        is_tor = proxy_obj.get('is_tor', False) == True
-        is_datacenter = proxy_obj.get('is_data_center', False) == True
-        is_public_proxy = proxy_obj.get('is_public_proxy', False) == True
-        is_residential = proxy_obj.get('is_residential_proxy', False) == True
-        is_web_proxy = proxy_obj.get('is_web_proxy', False) == True
-        is_web_crawler = proxy_obj.get('is_web_crawler', False) == True
+        # Read boolean values - handle both True/False and truthy values
+        def get_bool(obj, key):
+            val = obj.get(key)
+            if val is True:
+                return True
+            if val is False:
+                return False
+            if val is None:
+                return False
+            if isinstance(val, str):
+                return val.lower() in ['true', 'yes', '1']
+            return bool(val)
         
-        proxy_type = proxy_obj.get('proxy_type', '-') or '-'
-        threat = proxy_obj.get('threat', '-') or '-'
-        provider = proxy_obj.get('provider', '-') or '-'
-        last_seen = proxy_obj.get('last_seen', '-')
-        fraud_score = ip_data.get('fraud_score', '-')
-        usage_type = ip_data.get('usage_type', '-') or '-'
+        is_proxy = get_bool(ip_data, 'is_proxy')
+        is_vpn = get_bool(proxy_obj, 'is_vpn')
+        is_tor = get_bool(proxy_obj, 'is_tor')
+        is_datacenter = get_bool(proxy_obj, 'is_data_center')
+        is_public_proxy = get_bool(proxy_obj, 'is_public_proxy')
+        is_residential = get_bool(proxy_obj, 'is_residential_proxy')
+        is_web_proxy = get_bool(proxy_obj, 'is_web_proxy')
+        is_web_crawler = get_bool(proxy_obj, 'is_web_crawler')
+        
+        proxy_type = proxy_obj.get('proxy_type') or '-'
+        threat = proxy_obj.get('threat') or '-'
+        provider = proxy_obj.get('provider') or '-'
+        last_seen = proxy_obj.get('last_seen') if proxy_obj.get('last_seen') is not None else '-'
+        fraud_score = ip_data.get('fraud_score') if ip_data.get('fraud_score') is not None else '-'
+        usage_type = ip_data.get('usage_type') or '-'
         
         lat = ip_data.get('latitude', 0)
         lon = ip_data.get('longitude', 0)
@@ -930,6 +958,9 @@ def check():
             "fraud_score": fraud_score,
             "distance_miles": distance,
             "distance_km": distance * 1.60934,
+            "debug_has_proxy_obj": 'proxy' in ip_data,
+            "debug_is_proxy_raw": ip_data.get('is_proxy'),
+            "debug_proxy_obj": proxy_obj
         })
         
     except ValueError as e:
