@@ -216,6 +216,24 @@ HTML_TEMPLATE = '''
         .assessment.notbest { background: rgba(60, 179, 113, 0.25); color: #3cb371; }
         .assessment.donotuse { background: rgba(255, 0, 0, 0.25); color: #ff4444; border: 1px solid #ff4444; }
         
+        .proxy-warning {
+            margin-top: 20px;
+            padding: 15px 20px;
+            background: rgba(255, 0, 0, 0.3);
+            border: 2px solid #ff0000;
+            border-radius: 8px;
+            color: #ff4444;
+            font-weight: 700;
+            font-size: 16px;
+            text-align: center;
+            animation: pulse-warning 1.5s infinite;
+        }
+        
+        @keyframes pulse-warning {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
         .detection-badge {
             display: inline-block;
             padding: 4px 12px;
@@ -526,6 +544,7 @@ HTML_TEMPLATE = '''
                         <div class="distance-unit">miles</div>
                         <div class="distance-km">${data.distance_km.toFixed(1)} km</div>
                         <div class="assessment ${assessmentClass}">${assessmentText}</div>
+                        ${data.is_proxy ? '<div class="proxy-warning">🚨 WARNING: PROXY DETECTED - AVOID USING THIS PROXY 🚨</div>' : ''}
                     </div>
                 </div>
                 
@@ -623,16 +642,24 @@ HTML_TEMPLATE = '''
                     <div class="result-section">
                         <h3>🐛 Debug Info</h3>
                         <div class="result-row">
+                            <span class="result-label">IP Queried</span>
+                            <span class="result-value">${data.debug_ip_queried}</span>
+                        </div>
+                        <div class="result-row">
                             <span class="result-label">Has Proxy Object</span>
                             <span class="result-value">${data.debug_has_proxy_obj}</span>
                         </div>
                         <div class="result-row">
                             <span class="result-label">Raw is_proxy</span>
-                            <span class="result-value">${data.debug_is_proxy_raw}</span>
+                            <span class="result-value">${String(data.debug_is_proxy_raw)}</span>
                         </div>
                         <div class="result-row">
                             <span class="result-label">Proxy Object</span>
                             <span class="result-value" style="font-size:10px;">${JSON.stringify(data.debug_proxy_obj)}</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Full API Response</span>
+                            <span class="result-value" style="font-size:9px; max-height:200px; overflow:auto; display:block;">${JSON.stringify(data.debug_full_response, null, 2)}</span>
                         </div>
                     </div>
                     
@@ -960,7 +987,9 @@ def check():
             "distance_km": distance * 1.60934,
             "debug_has_proxy_obj": 'proxy' in ip_data,
             "debug_is_proxy_raw": ip_data.get('is_proxy'),
-            "debug_proxy_obj": proxy_obj
+            "debug_proxy_obj": proxy_obj,
+            "debug_ip_queried": proxy_ip,
+            "debug_full_response": ip_data
         })
         
     except ValueError as e:
@@ -976,3 +1005,4 @@ def check():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
