@@ -238,20 +238,19 @@ HTML_TEMPLATE = '''
             background: rgba(0, 0, 0, 0.3);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 8px;
-            padding: 10px 15px;
+            padding: 12px 15px;
             margin-bottom: 15px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
             font-size: 12px;
             font-family: 'Monaco', 'Menlo', monospace;
         }
         
-        .proxy-bar-item {
+        .proxy-bar-row {
             color: #aaa;
+            padding: 4px 0;
+            word-break: break-all;
         }
         
-        .proxy-bar-item strong {
+        .proxy-bar-row strong {
             color: #00d9ff;
         }
         
@@ -560,10 +559,10 @@ HTML_TEMPLATE = '''
             
             resultsDiv.innerHTML = `
                 <div class="proxy-bar">
-                    <span class="proxy-bar-item"><strong>🔐 Server:</strong> ${data.proxy_server}</span>
-                    <span class="proxy-bar-item"><strong>Port:</strong> ${data.proxy_port}</span>
-                    <span class="proxy-bar-item"><strong>User:</strong> <span title="${data.proxy_username}">${data.proxy_username.length > 30 ? data.proxy_username.substring(0, 30) + '...' : data.proxy_username}</span></span>
-                    <span class="proxy-bar-item"><strong>Pass:</strong> ${data.proxy_password}</span>
+                    <div class="proxy-bar-row"><strong>🔐 Server:</strong> ${data.proxy_server}</div>
+                    <div class="proxy-bar-row"><strong>Port:</strong> ${data.proxy_port}</div>
+                    <div class="proxy-bar-row"><strong>Username:</strong> ${data.proxy_username}</div>
+                    <div class="proxy-bar-row"><strong>Password:</strong> ${data.proxy_password}</div>
                 </div>
                 
                 <div class="card">
