@@ -234,6 +234,27 @@ HTML_TEMPLATE = '''
             50% { opacity: 0.7; }
         }
         
+        .proxy-bar {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            font-size: 12px;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+        
+        .proxy-bar-item {
+            color: #aaa;
+        }
+        
+        .proxy-bar-item strong {
+            color: #00d9ff;
+        }
+        
         .detection-badge {
             display: inline-block;
             padding: 4px 12px;
@@ -538,26 +559,11 @@ HTML_TEMPLATE = '''
             }
             
             resultsDiv.innerHTML = `
-                <div class="card">
-                    <div class="result-section">
-                        <h3>🔐 Parsed Proxy Details</h3>
-                        <div class="result-row">
-                            <span class="result-label">Server</span>
-                            <span class="result-value">${data.proxy_server}</span>
-                        </div>
-                        <div class="result-row">
-                            <span class="result-label">Port</span>
-                            <span class="result-value">${data.proxy_port}</span>
-                        </div>
-                        <div class="result-row">
-                            <span class="result-label">Username</span>
-                            <span class="result-value">${data.proxy_username}</span>
-                        </div>
-                        <div class="result-row">
-                            <span class="result-label">Password</span>
-                            <span class="result-value">${data.proxy_password}</span>
-                        </div>
-                    </div>
+                <div class="proxy-bar">
+                    <span class="proxy-bar-item"><strong>🔐 Server:</strong> ${data.proxy_server}</span>
+                    <span class="proxy-bar-item"><strong>Port:</strong> ${data.proxy_port}</span>
+                    <span class="proxy-bar-item"><strong>User:</strong> <span title="${data.proxy_username}">${data.proxy_username.length > 30 ? data.proxy_username.substring(0, 30) + '...' : data.proxy_username}</span></span>
+                    <span class="proxy-bar-item"><strong>Pass:</strong> ${data.proxy_password}</span>
                 </div>
                 
                 <div class="card">
