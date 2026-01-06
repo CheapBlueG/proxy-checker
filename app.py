@@ -539,6 +539,28 @@ HTML_TEMPLATE = '''
             
             resultsDiv.innerHTML = `
                 <div class="card">
+                    <div class="result-section">
+                        <h3>🔐 Parsed Proxy Details</h3>
+                        <div class="result-row">
+                            <span class="result-label">Server</span>
+                            <span class="result-value">${data.proxy_server}</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Port</span>
+                            <span class="result-value">${data.proxy_port}</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Username</span>
+                            <span class="result-value">${data.proxy_username}</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Password</span>
+                            <span class="result-value">${data.proxy_password}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
                     <div class="distance-box">
                         <div class="distance-value">${data.distance_miles.toFixed(1)}</div>
                         <div class="distance-unit">miles</div>
@@ -957,6 +979,10 @@ def check():
         )
         
         return jsonify({
+            "proxy_server": proxy_info['host'],
+            "proxy_port": proxy_info['port'],
+            "proxy_username": proxy_info['username'],
+            "proxy_password": proxy_info['password'],
             "target_input": target_address,
             "target_resolved": target_coords['place_name'],
             "target_lat": target_coords['lat'],
@@ -1005,4 +1031,3 @@ def check():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
-
