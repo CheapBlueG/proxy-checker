@@ -234,6 +234,25 @@ HTML_TEMPLATE = '''
             50% { opacity: 0.7; }
         }
         
+        .mobile-warning {
+            margin-top: 15px;
+            padding: 15px 20px;
+            background: rgba(255, 165, 0, 0.3);
+            border: 2px solid #ffa500;
+            border-radius: 8px;
+            color: #ffa500;
+            font-weight: 700;
+            font-size: 14px;
+            text-align: center;
+            animation: pulse-warning 1.5s infinite;
+        }
+        
+        .mobile-warning small {
+            font-weight: 400;
+            font-size: 11px;
+            opacity: 0.9;
+        }
+        
         .proxy-bar {
             background: rgba(0, 0, 0, 0.3);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -572,6 +591,7 @@ HTML_TEMPLATE = '''
                         <div class="distance-km">${data.distance_km.toFixed(1)} km</div>
                         <div class="assessment ${assessmentClass}">${assessmentText}</div>
                         ${data.is_proxy ? '<div class="proxy-warning">🚨 WARNING: PROXY DETECTED - AVOID USING THIS PROXY 🚨</div>' : ''}
+                        ${data.is_mobile ? '<div class="mobile-warning">📱 WARNING: MOBILE PROXY DETECTED - AVOID<br><small>' + data.mobile_reason + '</small></div>' : ''}
                     </div>
                 </div>
                 
@@ -638,6 +658,12 @@ HTML_TEMPLATE = '''
                             <span class="result-label">Web Crawler</span>
                             <span class="detection-badge ${data.is_web_crawler ? 'badge-yes' : 'badge-no'}">
                                 ${data.is_web_crawler ? '🚨 YES' : '✅ NO'}
+                            </span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Mobile Proxy</span>
+                            <span class="detection-badge ${data.is_mobile ? 'badge-yes' : 'badge-no'}">
+                                ${data.is_mobile ? '📱 YES' : '✅ NO'}
                             </span>
                         </div>
                         <div class="result-row">
@@ -974,6 +1000,40 @@ def check():
         fraud_score = ip_data.get('fraud_score') if ip_data.get('fraud_score') is not None else '-'
         usage_type = ip_data.get('usage_type') or '-'
         
+        # Detect mobile/cellular ISPs to avoid
+        isp_value = ip_data.get('isp', '') or ''
+        as_value = ip_data.get('as', '') or ''
+        isp_lower = isp_value.lower()
+        as_lower = as_value.lower()
+        usage_lower = usage_type.lower() if usage_type else ''
+        
+        mobile_keywords = ['mobile', 'wireless', 'cellular', 'lte', '5g', '4g', '3g']
+        mobile_carriers = ['at&t', 'att ', 'verizon', 't-mobile', 'tmobile', 'sprint', 'cricket', 'boost', 'metro pcs', 'metropcs', 'us cellular', 'uscellular', 'tracfone', 'straight talk', 'mint mobile', 'visible']
+        
+        is_mobile = False
+        mobile_reason = ''
+        
+        # Check for MOB in usage type
+        if 'mob' in usage_lower:
+            is_mobile = True
+            mobile_reason = f'Usage type contains mobile indicator ({usage_type})'
+        
+        # Check for mobile keywords in ISP/AS
+        if not is_mobile:
+            for keyword in mobile_keywords:
+                if keyword in isp_lower or keyword in as_lower:
+                    is_mobile = True
+                    mobile_reason = f'ISP indicates mobile/wireless network'
+                    break
+        
+        # Check for known mobile carriers
+        if not is_mobile:
+            for carrier in mobile_carriers:
+                if carrier in isp_lower or carrier in as_lower:
+                    is_mobile = True
+                    mobile_reason = f'Known mobile carrier detected ({isp_value})'
+                    break
+        
         lat = ip_data.get('latitude', 0)
         lon = ip_data.get('longitude', 0)
         
@@ -1008,6 +1068,8 @@ def check():
             "is_residential": is_residential,
             "is_web_proxy": is_web_proxy,
             "is_web_crawler": is_web_crawler,
+            "is_mobile": is_mobile,
+            "mobile_reason": mobile_reason,
             "proxy_type": proxy_type,
             "usage_type": usage_type,
             "threat": threat,
