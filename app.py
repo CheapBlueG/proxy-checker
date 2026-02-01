@@ -3,8 +3,27 @@ import re
 import math
 import requests
 import os
+import json
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
+
+# Shared API keys storage file
+SHARED_KEYS_FILE = '/tmp/shared_keys.json'
+ADMIN_PASSWORD = '1212'
+
+def load_shared_keys():
+    try:
+        if os.path.exists(SHARED_KEYS_FILE):
+            with open(SHARED_KEYS_FILE, 'r') as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
+
+def save_shared_keys(data):
+    with open(SHARED_KEYS_FILE, 'w') as f:
+        json.dump(data, f)
 
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
@@ -253,6 +272,25 @@ HTML_TEMPLATE = '''
             opacity: 0.9;
         }
         
+        .flagged-warning {
+            margin-top: 15px;
+            padding: 15px 20px;
+            background: rgba(255, 255, 0, 0.2);
+            border: 2px solid #ffff00;
+            border-radius: 8px;
+            color: #ffff00;
+            font-weight: 700;
+            font-size: 14px;
+            text-align: center;
+            animation: pulse-warning 1.5s infinite;
+        }
+        
+        .flagged-warning small {
+            font-weight: 400;
+            font-size: 11px;
+            opacity: 0.9;
+        }
+        
         .proxy-bar {
             background: rgba(0, 0, 0, 0.3);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -271,6 +309,70 @@ HTML_TEMPLATE = '''
         
         .proxy-bar-row strong {
             color: #00d9ff;
+        }
+        
+        .shared-key-status {
+            background: rgba(0, 217, 255, 0.1);
+            border: 1px solid rgba(0, 217, 255, 0.3);
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .key-timer {
+            font-size: 13px;
+            color: #00d9ff;
+        }
+        
+        .key-timer.warning {
+            color: #ffa500;
+        }
+        
+        .key-timer.expired {
+            color: #ff4444;
+        }
+        
+        .admin-toggle {
+            margin-top: 20px;
+            padding: 10px;
+            text-align: center;
+            color: #666;
+            font-size: 12px;
+            cursor: pointer;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .admin-toggle:hover {
+            color: #00d9ff;
+        }
+        
+        .admin-section {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .btn-admin {
+            background: linear-gradient(90deg, #ff6b6b, #ffa500);
+        }
+        
+        #adminResult {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 13px;
+        }
+        
+        #adminResult.success {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+        }
+        
+        #adminResult.error {
+            background: rgba(255, 71, 87, 0.2);
+            color: #ff4757;
         }
         
         .detection-badge {
@@ -416,13 +518,17 @@ HTML_TEMPLATE = '''
         <h1>🌐 Proxy Location Checker</h1>
         <p class="subtitle">Check proxy distance from target address & detection status</p>
         
+        <div class="shared-key-status" id="sharedKeyStatus" style="display:none;">
+            <div class="key-timer" id="keyTimer"></div>
+        </div>
+        
         <div class="card">
             <div class="form-group">
                 <label>
                     Mapbox API Key 
                     <span class="label-hint">— <a href="https://account.mapbox.com/access-tokens/" target="_blank" class="api-link">Get free key</a></span>
                 </label>
-                <input type="text" id="mapboxKey" placeholder="pk.eyJ1Ijo...">
+                <input type="text" id="mapboxKey" placeholder="pk.eyJ1Ijo... (auto-filled if shared key set)">
                 <div class="save-key">
                     <input type="checkbox" id="saveKey" checked>
                     <label for="saveKey" style="margin: 0; font-weight: normal;">Remember API key in browser</label>
@@ -434,7 +540,7 @@ HTML_TEMPLATE = '''
                     IP2Location API Key 
                     <span class="label-hint">— <a href="https://www.ip2location.io/sign-up" target="_blank" class="api-link">Get free key</a></span>
                 </label>
-                <input type="text" id="ip2locationKey" placeholder="Your IP2Location.io API key">
+                <input type="text" id="ip2locationKey" placeholder="Auto-filled if shared key set">
                 <div class="save-key">
                     <input type="checkbox" id="saveIp2Key" checked>
                     <label for="saveIp2Key" style="margin: 0; font-weight: normal;">Remember API key in browser</label>
@@ -454,6 +560,24 @@ HTML_TEMPLATE = '''
             <button class="btn" id="checkBtn" onclick="checkProxy()">
                 Check Proxy Location
             </button>
+            
+            <div class="admin-toggle" onclick="toggleAdmin()">⚙️ Admin: Set Shared Keys</div>
+            <div class="admin-section" id="adminSection" style="display:none;">
+                <div class="form-group">
+                    <label>Admin Password</label>
+                    <input type="password" id="adminPassword" placeholder="Enter password to update shared keys">
+                </div>
+                <div class="form-group">
+                    <label>New Mapbox Shared Key</label>
+                    <input type="text" id="newMapboxKey" placeholder="pk.eyJ1Ijo...">
+                </div>
+                <div class="form-group">
+                    <label>New IP2Location Shared Key</label>
+                    <input type="text" id="newIp2Key" placeholder="Your IP2Location.io API key">
+                </div>
+                <button class="btn btn-admin" onclick="setSharedKeys()">Update Shared Keys</button>
+                <div id="adminResult"></div>
+            </div>
         </div>
         
         <div class="results" id="results">
@@ -461,16 +585,97 @@ HTML_TEMPLATE = '''
     </div>
     
     <script>
-        window.onload = function() {
+        window.onload = async function() {
+            // First try to load shared keys
+            try {
+                const response = await fetch('/get-shared-keys');
+                const sharedKeys = await response.json();
+                
+                if (sharedKeys.mapbox_key || sharedKeys.ip2location_key) {
+                    document.getElementById('sharedKeyStatus').style.display = 'block';
+                    let timerHtml = '🔑 <strong>Shared Keys Active</strong> — ';
+                    
+                    if (sharedKeys.mapbox_key) {
+                        document.getElementById('mapboxKey').value = sharedKeys.mapbox_key;
+                        const days = sharedKeys.mapbox_days_remaining;
+                        const timerClass = days <= 1 ? 'expired' : days <= 3 ? 'warning' : '';
+                        timerHtml += `Mapbox: <span class="${timerClass}">${days} days left</span>`;
+                    }
+                    
+                    if (sharedKeys.ip2location_key) {
+                        document.getElementById('ip2locationKey').value = sharedKeys.ip2location_key;
+                        const days = sharedKeys.ip2location_days_remaining;
+                        const timerClass = days <= 1 ? 'expired' : days <= 3 ? 'warning' : '';
+                        if (sharedKeys.mapbox_key) timerHtml += ' | ';
+                        timerHtml += `IP2Location: <span class="${timerClass}">${days} days left</span>`;
+                    }
+                    
+                    document.getElementById('keyTimer').innerHTML = timerHtml;
+                }
+            } catch (e) {
+                console.log('No shared keys available');
+            }
+            
+            // Fall back to localStorage if no shared keys
             const savedKey = localStorage.getItem('mapbox_api_key');
-            if (savedKey) {
+            if (savedKey && !document.getElementById('mapboxKey').value) {
                 document.getElementById('mapboxKey').value = savedKey;
             }
             const savedIp2Key = localStorage.getItem('ip2location_api_key');
-            if (savedIp2Key) {
+            if (savedIp2Key && !document.getElementById('ip2locationKey').value) {
                 document.getElementById('ip2locationKey').value = savedIp2Key;
             }
         };
+        
+        function toggleAdmin() {
+            const section = document.getElementById('adminSection');
+            section.style.display = section.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        async function setSharedKeys() {
+            const password = document.getElementById('adminPassword').value;
+            const mapboxKey = document.getElementById('newMapboxKey').value.trim();
+            const ip2Key = document.getElementById('newIp2Key').value.trim();
+            const resultDiv = document.getElementById('adminResult');
+            
+            if (!password) {
+                resultDiv.className = 'error';
+                resultDiv.textContent = 'Please enter admin password';
+                return;
+            }
+            
+            if (!mapboxKey && !ip2Key) {
+                resultDiv.className = 'error';
+                resultDiv.textContent = 'Please enter at least one API key';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/set-shared-keys', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        password: password,
+                        mapbox_key: mapboxKey,
+                        ip2location_key: ip2Key
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.className = 'success';
+                    resultDiv.textContent = '✅ Shared keys updated! Refreshing...';
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    resultDiv.className = 'error';
+                    resultDiv.textContent = '❌ ' + (data.error || 'Failed to update keys');
+                }
+            } catch (e) {
+                resultDiv.className = 'error';
+                resultDiv.textContent = '❌ Error: ' + e.message;
+            }
+        }
         
         async function checkProxy() {
             const mapboxKey = document.getElementById('mapboxKey').value.trim();
@@ -592,6 +797,7 @@ HTML_TEMPLATE = '''
                         <div class="assessment ${assessmentClass}">${assessmentText}</div>
                         ${data.is_proxy ? '<div class="proxy-warning">🚨 WARNING: PROXY DETECTED - AVOID USING THIS PROXY 🚨</div>' : ''}
                         ${data.is_mobile ? '<div class="mobile-warning">📱 WARNING: MOBILE PROXY DETECTED - AVOID<br><small>' + data.mobile_reason + '</small></div>' : ''}
+                        ${data.is_flagged_isp ? '<div class="flagged-warning">⚠️ WARNING: FLAGGED ISP - AVOID<br><small>' + data.flagged_reason + '</small></div>' : ''}
                     </div>
                 </div>
                 
@@ -664,6 +870,12 @@ HTML_TEMPLATE = '''
                             <span class="result-label">Mobile Proxy</span>
                             <span class="detection-badge ${data.is_mobile ? 'badge-yes' : 'badge-no'}">
                                 ${data.is_mobile ? '📱 YES' : '✅ NO'}
+                            </span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">Flagged ISP</span>
+                            <span class="detection-badge ${data.is_flagged_isp ? 'badge-yes' : 'badge-no'}">
+                                ${data.is_flagged_isp ? '⚠️ YES' : '✅ NO'}
                             </span>
                         </div>
                         <div class="result-row">
@@ -921,6 +1133,58 @@ def index():
     return render_template_string(HTML_TEMPLATE)
 
 
+@app.route('/get-shared-keys', methods=['GET'])
+def get_shared_keys():
+    keys = load_shared_keys()
+    result = {}
+    
+    if 'mapbox' in keys:
+        result['mapbox_key'] = keys['mapbox']['key']
+        result['mapbox_set_date'] = keys['mapbox']['set_date']
+        # Calculate days remaining
+        set_date = datetime.fromisoformat(keys['mapbox']['set_date'])
+        expire_date = set_date + timedelta(days=7)
+        days_remaining = (expire_date - datetime.now()).days
+        result['mapbox_days_remaining'] = max(0, days_remaining)
+    
+    if 'ip2location' in keys:
+        result['ip2location_key'] = keys['ip2location']['key']
+        result['ip2location_set_date'] = keys['ip2location']['set_date']
+        # Calculate days remaining
+        set_date = datetime.fromisoformat(keys['ip2location']['set_date'])
+        expire_date = set_date + timedelta(days=7)
+        days_remaining = (expire_date - datetime.now()).days
+        result['ip2location_days_remaining'] = max(0, days_remaining)
+    
+    return jsonify(result)
+
+
+@app.route('/set-shared-keys', methods=['POST'])
+def set_shared_keys():
+    data = request.json
+    password = data.get('password', '')
+    
+    if password != ADMIN_PASSWORD:
+        return jsonify({"error": "Invalid password"}), 401
+    
+    keys = load_shared_keys()
+    
+    if data.get('mapbox_key'):
+        keys['mapbox'] = {
+            'key': data['mapbox_key'],
+            'set_date': datetime.now().isoformat()
+        }
+    
+    if data.get('ip2location_key'):
+        keys['ip2location'] = {
+            'key': data['ip2location_key'],
+            'set_date': datetime.now().isoformat()
+        }
+    
+    save_shared_keys(keys)
+    return jsonify({"success": True, "message": "Keys updated successfully"})
+
+
 @app.route('/check', methods=['POST'])
 def check():
     data = request.json
@@ -1009,6 +1273,7 @@ def check():
         
         mobile_keywords = ['mobile', 'wireless', 'cellular', 'lte', '5g', '4g', '3g']
         mobile_carriers = ['at&t', 'att ', 'verizon', 't-mobile', 'tmobile', 'sprint', 'cricket', 'boost', 'metro pcs', 'metropcs', 'us cellular', 'uscellular', 'tracfone', 'straight talk', 'mint mobile', 'visible']
+        flagged_isps = ['rcn', 'starlink']
         
         is_mobile = False
         mobile_reason = ''
@@ -1033,6 +1298,15 @@ def check():
                     is_mobile = True
                     mobile_reason = f'Known mobile carrier detected ({isp_value})'
                     break
+        
+        # Check for flagged ISPs (RCN, Starlink, etc.)
+        is_flagged_isp = False
+        flagged_reason = ''
+        for flagged in flagged_isps:
+            if flagged in isp_lower or flagged in as_lower:
+                is_flagged_isp = True
+                flagged_reason = f'Flagged ISP detected ({isp_value}) - Not recommended for proxy use'
+                break
         
         lat = ip_data.get('latitude', 0)
         lon = ip_data.get('longitude', 0)
@@ -1070,6 +1344,8 @@ def check():
             "is_web_crawler": is_web_crawler,
             "is_mobile": is_mobile,
             "mobile_reason": mobile_reason,
+            "is_flagged_isp": is_flagged_isp,
+            "flagged_reason": flagged_reason,
             "proxy_type": proxy_type,
             "usage_type": usage_type,
             "threat": threat,
@@ -1098,3 +1374,4 @@ def check():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
