@@ -593,6 +593,22 @@ HTML_TEMPLATE = '''
                 const response = await fetch('/get-shared-keys');
                 const sharedKeys = await response.json();
                 
+                // Check if version changed - force refresh if so
+                const storedVersion = localStorage.getItem('shared_keys_version');
+                if (sharedKeys.version && storedVersion && storedVersion !== sharedKeys.version) {
+                    // Version changed! Clear everything and force refresh
+                    localStorage.removeItem('mapbox_api_key');
+                    localStorage.removeItem('ip2location_api_key');
+                    localStorage.setItem('shared_keys_version', sharedKeys.version);
+                    location.reload(true); // Force refresh from server
+                    return;
+                }
+                
+                // Store current version
+                if (sharedKeys.version) {
+                    localStorage.setItem('shared_keys_version', sharedKeys.version);
+                }
+                
                 if (sharedKeys.mapbox_key || sharedKeys.ip2location_key) {
                     document.getElementById('sharedKeyStatus').style.display = 'block';
                     let timerHtml = '🔑 <strong>Shared Keys Active</strong> — ';
@@ -645,7 +661,29 @@ HTML_TEMPLATE = '''
                     document.getElementById('ip2locationKey').value = savedIp2Key;
                 }
             }
+            
+            // Periodically check for key updates (every 30 seconds)
+            setInterval(checkForKeyUpdates, 30000);
         };
+        
+        async function checkForKeyUpdates() {
+            try {
+                const response = await fetch('/get-shared-keys');
+                const sharedKeys = await response.json();
+                const storedVersion = localStorage.getItem('shared_keys_version');
+                
+                if (sharedKeys.version && storedVersion && storedVersion !== sharedKeys.version) {
+                    // Keys changed! Show notification and refresh
+                    alert('🔑 API keys have been updated. Page will refresh.');
+                    localStorage.removeItem('mapbox_api_key');
+                    localStorage.removeItem('ip2location_api_key');
+                    localStorage.setItem('shared_keys_version', sharedKeys.version);
+                    location.reload(true);
+                }
+            } catch (e) {
+                // Silently fail
+            }
+        }
         
         function toggleAdmin() {
             const section = document.getElementById('adminSection');
@@ -686,7 +724,9 @@ HTML_TEMPLATE = '''
                 if (response.ok) {
                     resultDiv.className = 'success';
                     resultDiv.textContent = '✅ Shared keys updated! Refreshing...';
-                    setTimeout(() => location.reload(), 1500);
+                    // Clear version to force fresh load
+                    localStorage.removeItem('shared_keys_version');
+                    setTimeout(() => location.reload(true), 1500);
                 } else {
                     resultDiv.className = 'error';
                     resultDiv.textContent = '❌ ' + (data.error || 'Failed to update keys');
@@ -1159,6 +1199,9 @@ def get_shared_keys():
     keys = load_shared_keys()
     result = {}
     
+    # Add version timestamp for change detection
+    result['version'] = keys.get('version', '0')
+    
     if 'mapbox' in keys:
         result['mapbox_key'] = keys['mapbox']['key']
         result['mapbox_set_date'] = keys['mapbox']['set_date']
@@ -1189,6 +1232,9 @@ def set_shared_keys():
         return jsonify({"error": "Invalid password"}), 401
     
     keys = load_shared_keys()
+    
+    # Update version timestamp to trigger refresh for all users
+    keys['version'] = datetime.now().isoformat()
     
     if data.get('mapbox_key'):
         keys['mapbox'] = {
