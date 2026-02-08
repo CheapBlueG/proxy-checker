@@ -523,7 +523,7 @@ HTML_TEMPLATE = '''
         </div>
         
         <div class="card">
-            <div class="form-group">
+            <div class="form-group" id="mapboxFieldGroup">
                 <label>
                     Mapbox API Key 
                     <span class="label-hint">— <a href="https://account.mapbox.com/access-tokens/" target="_blank" class="api-link">Get free key</a></span>
@@ -535,7 +535,7 @@ HTML_TEMPLATE = '''
                 </div>
             </div>
             
-            <div class="form-group">
+            <div class="form-group" id="ip2locationFieldGroup">
                 <label>
                     IP2Location API Key 
                     <span class="label-hint">— <a href="https://www.ip2location.io/sign-up" target="_blank" class="api-link">Get free key</a></span>
@@ -585,6 +585,8 @@ HTML_TEMPLATE = '''
     </div>
     
     <script>
+        let sharedKeysLoaded = { mapbox: false, ip2location: false };
+        
         window.onload = async function() {
             // First try to load shared keys
             try {
@@ -596,14 +598,28 @@ HTML_TEMPLATE = '''
                     let timerHtml = '🔑 <strong>Shared Keys Active</strong> — ';
                     
                     if (sharedKeys.mapbox_key) {
+                        // Force set the value
                         document.getElementById('mapboxKey').value = sharedKeys.mapbox_key;
+                        // Clear localStorage to prevent conflicts
+                        localStorage.removeItem('mapbox_api_key');
+                        // Hide the mapbox field
+                        document.getElementById('mapboxFieldGroup').style.display = 'none';
+                        sharedKeysLoaded.mapbox = true;
+                        
                         const days = sharedKeys.mapbox_days_remaining;
                         const timerClass = days <= 1 ? 'expired' : days <= 3 ? 'warning' : '';
                         timerHtml += `Mapbox: <span class="${timerClass}">${days} days left</span>`;
                     }
                     
                     if (sharedKeys.ip2location_key) {
+                        // Force set the value
                         document.getElementById('ip2locationKey').value = sharedKeys.ip2location_key;
+                        // Clear localStorage to prevent conflicts
+                        localStorage.removeItem('ip2location_api_key');
+                        // Hide the ip2location field
+                        document.getElementById('ip2locationFieldGroup').style.display = 'none';
+                        sharedKeysLoaded.ip2location = true;
+                        
                         const days = sharedKeys.ip2location_days_remaining;
                         const timerClass = days <= 1 ? 'expired' : days <= 3 ? 'warning' : '';
                         if (sharedKeys.mapbox_key) timerHtml += ' | ';
@@ -616,14 +632,18 @@ HTML_TEMPLATE = '''
                 console.log('No shared keys available');
             }
             
-            // Fall back to localStorage if no shared keys
-            const savedKey = localStorage.getItem('mapbox_api_key');
-            if (savedKey && !document.getElementById('mapboxKey').value) {
-                document.getElementById('mapboxKey').value = savedKey;
+            // Fall back to localStorage ONLY if shared keys not loaded
+            if (!sharedKeysLoaded.mapbox) {
+                const savedKey = localStorage.getItem('mapbox_api_key');
+                if (savedKey) {
+                    document.getElementById('mapboxKey').value = savedKey;
+                }
             }
-            const savedIp2Key = localStorage.getItem('ip2location_api_key');
-            if (savedIp2Key && !document.getElementById('ip2locationKey').value) {
-                document.getElementById('ip2locationKey').value = savedIp2Key;
+            if (!sharedKeysLoaded.ip2location) {
+                const savedIp2Key = localStorage.getItem('ip2location_api_key');
+                if (savedIp2Key) {
+                    document.getElementById('ip2locationKey').value = savedIp2Key;
+                }
             }
         };
         
@@ -702,15 +722,16 @@ HTML_TEMPLATE = '''
                 return;
             }
             
-            if (saveKey) {
+            // Only save to localStorage if not using shared keys
+            if (!sharedKeysLoaded.mapbox && saveKey) {
                 localStorage.setItem('mapbox_api_key', mapboxKey);
-            } else {
+            } else if (!sharedKeysLoaded.mapbox) {
                 localStorage.removeItem('mapbox_api_key');
             }
             
-            if (saveIp2Key) {
+            if (!sharedKeysLoaded.ip2location && saveIp2Key) {
                 localStorage.setItem('ip2location_api_key', ip2locationKey);
-            } else {
+            } else if (!sharedKeysLoaded.ip2location) {
                 localStorage.removeItem('ip2location_api_key');
             }
             
@@ -1374,4 +1395,3 @@ def check():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
-
