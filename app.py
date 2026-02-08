@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, render_template_string, request, jsonify, make_response
 import re
 import math
 import requests
@@ -7,6 +7,9 @@ import json
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
+
+# App version - increment this when pushing updates to force refresh
+APP_VERSION = '1.0.1'
 
 # Shared API keys storage file
 SHARED_KEYS_FILE = '/tmp/shared_keys.json'
@@ -24,6 +27,15 @@ def load_shared_keys():
 def save_shared_keys(data):
     with open(SHARED_KEYS_FILE, 'w') as f:
         json.dump(data, f)
+
+
+# Add cache control headers to prevent caching
+@app.after_request
+def add_header(response):
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
@@ -595,6 +607,9 @@ HTML_TEMPLATE = '''
     </div>
     
     <script>
+        // Client app version - must match server APP_VERSION
+        const CLIENT_APP_VERSION = '1.0.1';
+        
         let sharedKeysLoaded = { mapbox: false, ip2location: false };
         
         window.onload = async function() {
@@ -603,7 +618,18 @@ HTML_TEMPLATE = '''
                 const response = await fetch('/get-shared-keys');
                 const sharedKeys = await response.json();
                 
-                // Check if version changed - force refresh if so
+                // Check if app version changed - force hard refresh if so
+                if (sharedKeys.app_version && sharedKeys.app_version !== CLIENT_APP_VERSION) {
+                    console.log('App version mismatch! Server:', sharedKeys.app_version, 'Client:', CLIENT_APP_VERSION);
+                    // Clear all caches and force refresh
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    // Force reload bypassing cache
+                    window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
+                    return;
+                }
+                
+                // Check if key version changed - force refresh if so
                 const storedVersion = localStorage.getItem('shared_keys_version');
                 if (sharedKeys.version && storedVersion && storedVersion !== sharedKeys.version) {
                     // Version changed! Clear everything and force refresh
@@ -692,6 +718,17 @@ HTML_TEMPLATE = '''
             try {
                 const response = await fetch('/get-shared-keys');
                 const sharedKeys = await response.json();
+                
+                // Check app version first
+                if (sharedKeys.app_version && sharedKeys.app_version !== CLIENT_APP_VERSION) {
+                    alert('🔄 App has been updated. Page will refresh.');
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
+                    return;
+                }
+                
+                // Check key version
                 const storedVersion = localStorage.getItem('shared_keys_version');
                 
                 if (sharedKeys.version && storedVersion && storedVersion !== sharedKeys.version) {
@@ -1220,6 +1257,9 @@ def index():
 def get_shared_keys():
     keys = load_shared_keys()
     result = {}
+    
+    # Include app version for forced updates
+    result['app_version'] = APP_VERSION
     
     # Add version timestamp for change detection
     result['version'] = keys.get('version', '0')
