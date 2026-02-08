@@ -375,6 +375,16 @@ HTML_TEMPLATE = '''
             color: #ff4757;
         }
         
+        .shared-badge {
+            background: rgba(0, 217, 255, 0.2);
+            color: #00d9ff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            margin-left: 8px;
+            font-weight: 600;
+        }
+        
         .detection-badge {
             display: inline-block;
             padding: 4px 12px;
@@ -618,8 +628,14 @@ HTML_TEMPLATE = '''
                         document.getElementById('mapboxKey').value = sharedKeys.mapbox_key;
                         // Clear localStorage to prevent conflicts
                         localStorage.removeItem('mapbox_api_key');
-                        // Hide the mapbox field
-                        document.getElementById('mapboxFieldGroup').style.display = 'none';
+                        // Make field read-only instead of hiding
+                        document.getElementById('mapboxKey').readOnly = true;
+                        document.getElementById('mapboxKey').style.opacity = '0.7';
+                        document.getElementById('mapboxKey').style.cursor = 'not-allowed';
+                        // Hide the save checkbox since it's shared
+                        document.getElementById('saveKey').parentElement.style.display = 'none';
+                        // Add shared indicator to label
+                        document.querySelector('#mapboxFieldGroup label').innerHTML = 'Mapbox API Key <span class="shared-badge">🔒 SHARED</span>';
                         sharedKeysLoaded.mapbox = true;
                         
                         const days = sharedKeys.mapbox_days_remaining;
@@ -632,8 +648,14 @@ HTML_TEMPLATE = '''
                         document.getElementById('ip2locationKey').value = sharedKeys.ip2location_key;
                         // Clear localStorage to prevent conflicts
                         localStorage.removeItem('ip2location_api_key');
-                        // Hide the ip2location field
-                        document.getElementById('ip2locationFieldGroup').style.display = 'none';
+                        // Make field read-only instead of hiding
+                        document.getElementById('ip2locationKey').readOnly = true;
+                        document.getElementById('ip2locationKey').style.opacity = '0.7';
+                        document.getElementById('ip2locationKey').style.cursor = 'not-allowed';
+                        // Hide the save checkbox since it's shared
+                        document.getElementById('saveIp2Key').parentElement.style.display = 'none';
+                        // Add shared indicator to label
+                        document.querySelector('#ip2locationFieldGroup label').innerHTML = 'IP2Location API Key <span class="shared-badge">🔒 SHARED</span>';
                         sharedKeysLoaded.ip2location = true;
                         
                         const days = sharedKeys.ip2location_days_remaining;
