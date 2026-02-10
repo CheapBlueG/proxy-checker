@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 app = Flask(__name__)
 
 # App version - increment this when pushing updates to force refresh
-APP_VERSION = '1.0.4'
+APP_VERSION = '1.0.5'
 
 # Admin password for setting keys
 ADMIN_PASSWORD = '1212'
@@ -652,7 +652,7 @@ HTML_TEMPLATE = '''
     
     <script>
         // Client app version - must match server APP_VERSION
-        const CLIENT_APP_VERSION = '1.0.4';
+        const CLIENT_APP_VERSION = '1.0.5';
         
         let sharedKeysLoaded = { mapbox: false, ip2location: false };
         // Store actual shared key values - these are what get used for API calls
@@ -1252,6 +1252,18 @@ def haversine_distance(lat1, lon1, lat2, lon2):
 @app.route('/')
 def index():
     return render_template_string(HTML_TEMPLATE)
+
+
+@app.route('/debug-env', methods=['GET'])
+def debug_env():
+    """Debug endpoint to check environment variables"""
+    return jsonify({
+        "SHARED_IP2LOCATION_KEY_exists": bool(os.environ.get('SHARED_IP2LOCATION_KEY', '')),
+        "SHARED_IP2LOCATION_KEY_length": len(os.environ.get('SHARED_IP2LOCATION_KEY', '')),
+        "SHARED_MAPBOX_KEY_exists": bool(os.environ.get('SHARED_MAPBOX_KEY', '')),
+        "SHARED_KEYS_SET_DATE": os.environ.get('SHARED_KEYS_SET_DATE', 'not set'),
+        "all_env_keys": [k for k in os.environ.keys() if 'SHARED' in k]
+    })
 
 
 @app.route('/get-shared-keys', methods=['GET'])
