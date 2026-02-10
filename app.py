@@ -9,24 +9,42 @@ from datetime import datetime, timedelta
 app = Flask(__name__)
 
 # App version - increment this when pushing updates to force refresh
-APP_VERSION = '1.0.3'
+APP_VERSION = '1.0.4'
 
-# Shared API keys storage file
-SHARED_KEYS_FILE = '/tmp/shared_keys.json'
+# Admin password for setting keys
 ADMIN_PASSWORD = '1212'
 
-def load_shared_keys():
-    try:
-        if os.path.exists(SHARED_KEYS_FILE):
-            with open(SHARED_KEYS_FILE, 'r') as f:
-                return json.load(f)
-    except:
-        pass
-    return {}
+# Shared API keys - READ FROM ENVIRONMENT VARIABLES (persistent on Render)
+# Set these in Render Dashboard > Environment Variables:
+# SHARED_MAPBOX_KEY = your_mapbox_key
+# SHARED_IP2LOCATION_KEY = your_ip2location_key
+# SHARED_KEYS_SET_DATE = 2024-01-15T00:00:00 (ISO format)
 
-def save_shared_keys(data):
-    with open(SHARED_KEYS_FILE, 'w') as f:
-        json.dump(data, f)
+def get_shared_keys():
+    """Get shared keys from environment variables (persistent)"""
+    result = {}
+    
+    mapbox_key = os.environ.get('SHARED_MAPBOX_KEY', '')
+    ip2location_key = os.environ.get('SHARED_IP2LOCATION_KEY', '')
+    set_date_str = os.environ.get('SHARED_KEYS_SET_DATE', '')
+    
+    if mapbox_key:
+        result['mapbox'] = {
+            'key': mapbox_key,
+            'set_date': set_date_str or datetime.now().isoformat()
+        }
+    
+    if ip2location_key:
+        result['ip2location'] = {
+            'key': ip2location_key,
+            'set_date': set_date_str or datetime.now().isoformat()
+        }
+    
+    # Generate version based on keys (changes when keys change)
+    if mapbox_key or ip2location_key:
+        result['version'] = str(hash(mapbox_key + ip2location_key))[:12]
+    
+    return result
 
 
 # Add cache control headers to prevent caching
@@ -365,6 +383,35 @@ HTML_TEMPLATE = '''
             border-top: 1px solid rgba(255, 255, 255, 0.1);
         }
         
+        .admin-info {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 15px;
+            font-size: 13px;
+        }
+        
+        .admin-info p {
+            margin: 8px 0;
+        }
+        
+        .admin-info ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .admin-info li {
+            margin: 5px 0;
+        }
+        
+        .admin-info code {
+            background: rgba(0, 217, 255, 0.2);
+            color: #00d9ff;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        
         .btn-admin {
             background: linear-gradient(90deg, #ff6b6b, #ffa500);
         }
@@ -585,20 +632,17 @@ HTML_TEMPLATE = '''
             
             <div class="admin-toggle" onclick="toggleAdmin()">⚙️ Admin: Set Shared Keys</div>
             <div class="admin-section" id="adminSection" style="display:none;">
-                <div class="form-group">
-                    <label>Admin Password</label>
-                    <input type="password" id="adminPassword" placeholder="Enter password to update shared keys">
+                <div class="admin-info">
+                    <p><strong>Shared keys are set via Render Environment Variables</strong></p>
+                    <p>Go to: <a href="https://dashboard.render.com" target="_blank" style="color:#00d9ff;">Render Dashboard</a> → Your Service → Environment</p>
+                    <p>Add these variables:</p>
+                    <ul>
+                        <li><code>SHARED_IP2LOCATION_KEY</code> - Your IP2Location.io API key</li>
+                        <li><code>SHARED_MAPBOX_KEY</code> - Your Mapbox API key (optional)</li>
+                        <li><code>SHARED_KEYS_SET_DATE</code> - Date set (e.g. 2024-01-15)</li>
+                    </ul>
+                    <p style="color:#ffa500;">After adding, click "Manual Deploy" to apply changes.</p>
                 </div>
-                <div class="form-group">
-                    <label>New Mapbox Shared Key</label>
-                    <input type="text" id="newMapboxKey" placeholder="pk.eyJ1Ijo...">
-                </div>
-                <div class="form-group">
-                    <label>New IP2Location Shared Key</label>
-                    <input type="text" id="newIp2Key" placeholder="Your IP2Location.io API key">
-                </div>
-                <button class="btn btn-admin" onclick="setSharedKeys()">Update Shared Keys</button>
-                <div id="adminResult"></div>
             </div>
         </div>
         
@@ -608,7 +652,7 @@ HTML_TEMPLATE = '''
     
     <script>
         // Client app version - must match server APP_VERSION
-        const CLIENT_APP_VERSION = '1.0.3';
+        const CLIENT_APP_VERSION = '1.0.4';
         
         let sharedKeysLoaded = { mapbox: false, ip2location: false };
         // Store actual shared key values - these are what get used for API calls
@@ -633,82 +677,77 @@ HTML_TEMPLATE = '''
                 
                 // Check if key version changed - force refresh if so
                 const storedVersion = localStorage.getItem('shared_keys_version');
-                if (sharedKeys.version && storedVersion && storedVersion !== sharedKeys.version) {
-                    // Version changed! Clear everything and force refresh
-                    localStorage.clear();
+                if (sharedKeys.version && sharedKeys.version !== '0' && storedVersion && storedVersion !== sharedKeys.version) {
+                    // Version changed! Force refresh
                     localStorage.setItem('shared_keys_version', sharedKeys.version);
-                    location.reload(true); // Force refresh from server
+                    location.reload(true);
                     return;
                 }
                 
                 // Store current version
-                if (sharedKeys.version) {
+                if (sharedKeys.version && sharedKeys.version !== '0') {
                     localStorage.setItem('shared_keys_version', sharedKeys.version);
                 }
                 
-                if (sharedKeys.mapbox_key || sharedKeys.ip2location_key) {
-                    // SHARED KEYS EXIST - Clear localStorage and lock everything
-                    localStorage.removeItem('mapbox_api_key');
-                    localStorage.removeItem('ip2location_api_key');
-                    
+                // Handle shared IP2Location key (LOCKED if exists)
+                if (sharedKeys.ip2location_key) {
                     document.getElementById('sharedKeyStatus').style.display = 'block';
-                    let timerHtml = '🔑 <strong>Shared Keys Active (Locked)</strong> — ';
                     
-                    if (sharedKeys.mapbox_key) {
-                        // Store the actual key value for API calls
-                        sharedKeyValues.mapbox = sharedKeys.mapbox_key;
-                        // Display masked key in field
-                        const maskedKey = sharedKeys.mapbox_key.substring(0, 10) + '••••••••••••••••';
-                        document.getElementById('mapboxKey').value = maskedKey;
-                        // Make field completely disabled and uneditable
-                        document.getElementById('mapboxKey').disabled = true;
-                        document.getElementById('mapboxKey').readOnly = true;
-                        document.getElementById('mapboxKey').style.opacity = '0.6';
-                        document.getElementById('mapboxKey').style.cursor = 'not-allowed';
-                        document.getElementById('mapboxKey').style.backgroundColor = 'rgba(0,0,0,0.5)';
-                        document.getElementById('mapboxKey').style.pointerEvents = 'none';
-                        document.getElementById('mapboxKey').style.userSelect = 'none';
-                        // Hide the save checkbox since it's shared
-                        document.getElementById('saveKey').parentElement.style.display = 'none';
-                        // Add shared indicator to label
-                        document.querySelector('#mapboxFieldGroup label').innerHTML = 'Mapbox API Key <span class="shared-badge">🔒 LOCKED</span>';
-                        sharedKeysLoaded.mapbox = true;
-                        
-                        const days = sharedKeys.mapbox_days_remaining;
-                        const timerClass = days <= 1 ? 'expired' : days <= 3 ? 'warning' : '';
-                        timerHtml += `Mapbox: <span class="${timerClass}">${days} days left</span>`;
-                    }
+                    // Store the actual key value for API calls
+                    sharedKeyValues.ip2location = sharedKeys.ip2location_key;
+                    // Clear any local IP2Location key
+                    localStorage.removeItem('ip2location_api_key');
+                    // Display masked key in field
+                    const maskedKey = sharedKeys.ip2location_key.substring(0, 8) + '••••••••••••';
+                    document.getElementById('ip2locationKey').value = maskedKey;
+                    // Make field completely disabled
+                    document.getElementById('ip2locationKey').disabled = true;
+                    document.getElementById('ip2locationKey').readOnly = true;
+                    document.getElementById('ip2locationKey').style.opacity = '0.6';
+                    document.getElementById('ip2locationKey').style.cursor = 'not-allowed';
+                    document.getElementById('ip2locationKey').style.backgroundColor = 'rgba(0,0,0,0.5)';
+                    document.getElementById('ip2locationKey').style.pointerEvents = 'none';
+                    // Hide the save checkbox
+                    document.getElementById('saveIp2Key').parentElement.style.display = 'none';
+                    // Add shared indicator to label
+                    document.querySelector('#ip2locationFieldGroup label').innerHTML = 'IP2Location API Key <span class="shared-badge">🔒 LOCKED</span>';
+                    sharedKeysLoaded.ip2location = true;
                     
-                    if (sharedKeys.ip2location_key) {
-                        // Store the actual key value for API calls
-                        sharedKeyValues.ip2location = sharedKeys.ip2location_key;
-                        // Display masked key in field
-                        const maskedKey = sharedKeys.ip2location_key.substring(0, 8) + '••••••••••••';
-                        document.getElementById('ip2locationKey').value = maskedKey;
-                        // Make field completely disabled and uneditable
-                        document.getElementById('ip2locationKey').disabled = true;
-                        document.getElementById('ip2locationKey').readOnly = true;
-                        document.getElementById('ip2locationKey').style.opacity = '0.6';
-                        document.getElementById('ip2locationKey').style.cursor = 'not-allowed';
-                        document.getElementById('ip2locationKey').style.backgroundColor = 'rgba(0,0,0,0.5)';
-                        document.getElementById('ip2locationKey').style.pointerEvents = 'none';
-                        document.getElementById('ip2locationKey').style.userSelect = 'none';
-                        // Hide the save checkbox since it's shared
-                        document.getElementById('saveIp2Key').parentElement.style.display = 'none';
-                        // Add shared indicator to label
-                        document.querySelector('#ip2locationFieldGroup label').innerHTML = 'IP2Location API Key <span class="shared-badge">🔒 LOCKED</span>';
-                        sharedKeysLoaded.ip2location = true;
-                        
-                        const days = sharedKeys.ip2location_days_remaining;
-                        const timerClass = days <= 1 ? 'expired' : days <= 3 ? 'warning' : '';
-                        if (sharedKeys.mapbox_key) timerHtml += ' | ';
-                        timerHtml += `IP2Location: <span class="${timerClass}">${days} days left</span>`;
-                    }
-                    
-                    document.getElementById('keyTimer').innerHTML = timerHtml;
+                    const days = sharedKeys.ip2location_days_remaining;
+                    const timerClass = days <= 1 ? 'expired' : days <= 3 ? 'warning' : '';
+                    document.getElementById('keyTimer').innerHTML = `🔑 <strong>Shared Key Active</strong> — IP2Location: <span class="${timerClass}">${days} days left</span>`;
                 }
+                
+                // Handle Mapbox - allow local storage, lock only if shared
+                if (sharedKeys.mapbox_key) {
+                    sharedKeyValues.mapbox = sharedKeys.mapbox_key;
+                    localStorage.removeItem('mapbox_api_key');
+                    const maskedKey = sharedKeys.mapbox_key.substring(0, 10) + '••••••••••••••••';
+                    document.getElementById('mapboxKey').value = maskedKey;
+                    document.getElementById('mapboxKey').disabled = true;
+                    document.getElementById('mapboxKey').readOnly = true;
+                    document.getElementById('mapboxKey').style.opacity = '0.6';
+                    document.getElementById('mapboxKey').style.cursor = 'not-allowed';
+                    document.getElementById('mapboxKey').style.backgroundColor = 'rgba(0,0,0,0.5)';
+                    document.getElementById('mapboxKey').style.pointerEvents = 'none';
+                    document.getElementById('saveKey').parentElement.style.display = 'none';
+                    document.querySelector('#mapboxFieldGroup label').innerHTML = 'Mapbox API Key <span class="shared-badge">🔒 LOCKED</span>';
+                    sharedKeysLoaded.mapbox = true;
+                } else {
+                    // No shared Mapbox key - allow local storage
+                    const savedMapboxKey = localStorage.getItem('mapbox_api_key');
+                    if (savedMapboxKey) {
+                        document.getElementById('mapboxKey').value = savedMapboxKey;
+                    }
+                }
+                
             } catch (e) {
-                console.log('No shared keys available');
+                console.log('No shared keys available, using local storage');
+                // Load from localStorage
+                const savedMapboxKey = localStorage.getItem('mapbox_api_key');
+                if (savedMapboxKey) {
+                    document.getElementById('mapboxKey').value = savedMapboxKey;
+                }
             }
             
             // Periodically check for key updates (every 30 seconds)
@@ -732,20 +771,20 @@ HTML_TEMPLATE = '''
                 // Check key version
                 const storedVersion = localStorage.getItem('shared_keys_version');
                 
-                if (sharedKeys.version && storedVersion && storedVersion !== sharedKeys.version) {
+                if (sharedKeys.version && sharedKeys.version !== '0' && storedVersion && storedVersion !== sharedKeys.version) {
                     // Keys changed! Show notification and refresh
                     alert('🔑 API keys have been updated. Page will refresh.');
-                    localStorage.clear();
                     localStorage.setItem('shared_keys_version', sharedKeys.version);
                     location.reload(true);
+                    return;
                 }
                 
-                // Also update the stored key values in case they changed
-                if (sharedKeys.mapbox_key) {
-                    sharedKeyValues.mapbox = sharedKeys.mapbox_key;
-                }
+                // Update stored key values
                 if (sharedKeys.ip2location_key) {
                     sharedKeyValues.ip2location = sharedKeys.ip2location_key;
+                }
+                if (sharedKeys.mapbox_key) {
+                    sharedKeyValues.mapbox = sharedKeys.mapbox_key;
                 }
             } catch (e) {
                 // Silently fail
@@ -758,50 +797,8 @@ HTML_TEMPLATE = '''
         }
         
         async function setSharedKeys() {
-            const password = document.getElementById('adminPassword').value;
-            const mapboxKey = document.getElementById('newMapboxKey').value.trim();
-            const ip2Key = document.getElementById('newIp2Key').value.trim();
-            const resultDiv = document.getElementById('adminResult');
-            
-            if (!password) {
-                resultDiv.className = 'error';
-                resultDiv.textContent = 'Please enter admin password';
-                return;
-            }
-            
-            if (!mapboxKey && !ip2Key) {
-                resultDiv.className = 'error';
-                resultDiv.textContent = 'Please enter at least one API key';
-                return;
-            }
-            
-            try {
-                const response = await fetch('/set-shared-keys', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        password: password,
-                        mapbox_key: mapboxKey,
-                        ip2location_key: ip2Key
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    resultDiv.className = 'success';
-                    resultDiv.textContent = '✅ Shared keys updated! Refreshing...';
-                    // Clear version to force fresh load
-                    localStorage.removeItem('shared_keys_version');
-                    setTimeout(() => location.reload(true), 1500);
-                } else {
-                    resultDiv.className = 'error';
-                    resultDiv.textContent = '❌ ' + (data.error || 'Failed to update keys');
-                }
-            } catch (e) {
-                resultDiv.className = 'error';
-                resultDiv.textContent = '❌ Error: ' + e.message;
-            }
+            document.getElementById('adminResult').className = 'error';
+            document.getElementById('adminResult').innerHTML = '⚠️ Keys are now set via <strong>Render Environment Variables</strong>.<br><br>Go to: Render Dashboard → Your Service → Environment<br><br>Add:<br>• SHARED_IP2LOCATION_KEY<br>• SHARED_MAPBOX_KEY (optional)<br>• SHARED_KEYS_SET_DATE (e.g. 2024-01-15)';
         }
         
         async function checkProxy() {
@@ -819,13 +816,23 @@ HTML_TEMPLATE = '''
             }
             
             if (!ip2locationKey) {
-                alert('Please enter your IP2Location API key');
+                alert('IP2Location API key is required. Contact admin to set shared key.');
                 return;
             }
             
             if (!proxyString || !targetAddress) {
                 alert('Please fill in both proxy string and target address');
                 return;
+            }
+            
+            // Save Mapbox key locally if not using shared key
+            if (!sharedKeysLoaded.mapbox) {
+                const saveKey = document.getElementById('saveKey').checked;
+                if (saveKey) {
+                    localStorage.setItem('mapbox_api_key', mapboxKey);
+                } else {
+                    localStorage.removeItem('mapbox_api_key');
+                }
             }
             
             btn.disabled = true;
@@ -1248,64 +1255,50 @@ def index():
 
 
 @app.route('/get-shared-keys', methods=['GET'])
-def get_shared_keys():
-    keys = load_shared_keys()
+def get_shared_keys_route():
+    keys = get_shared_keys()
     result = {}
     
     # Include app version for forced updates
     result['app_version'] = APP_VERSION
     
-    # Add version timestamp for change detection
+    # Add version for change detection
     result['version'] = keys.get('version', '0')
     
     if 'mapbox' in keys:
         result['mapbox_key'] = keys['mapbox']['key']
         result['mapbox_set_date'] = keys['mapbox']['set_date']
         # Calculate days remaining
-        set_date = datetime.fromisoformat(keys['mapbox']['set_date'])
-        expire_date = set_date + timedelta(days=7)
-        days_remaining = (expire_date - datetime.now()).days
-        result['mapbox_days_remaining'] = max(0, days_remaining)
+        try:
+            set_date = datetime.fromisoformat(keys['mapbox']['set_date'])
+            expire_date = set_date + timedelta(days=7)
+            days_remaining = (expire_date - datetime.now()).days
+            result['mapbox_days_remaining'] = max(0, days_remaining)
+        except:
+            result['mapbox_days_remaining'] = 7
     
     if 'ip2location' in keys:
         result['ip2location_key'] = keys['ip2location']['key']
         result['ip2location_set_date'] = keys['ip2location']['set_date']
         # Calculate days remaining
-        set_date = datetime.fromisoformat(keys['ip2location']['set_date'])
-        expire_date = set_date + timedelta(days=7)
-        days_remaining = (expire_date - datetime.now()).days
-        result['ip2location_days_remaining'] = max(0, days_remaining)
+        try:
+            set_date = datetime.fromisoformat(keys['ip2location']['set_date'])
+            expire_date = set_date + timedelta(days=7)
+            days_remaining = (expire_date - datetime.now()).days
+            result['ip2location_days_remaining'] = max(0, days_remaining)
+        except:
+            result['ip2location_days_remaining'] = 7
     
     return jsonify(result)
 
 
 @app.route('/set-shared-keys', methods=['POST'])
-def set_shared_keys():
-    data = request.json
-    password = data.get('password', '')
-    
-    if password != ADMIN_PASSWORD:
-        return jsonify({"error": "Invalid password"}), 401
-    
-    keys = load_shared_keys()
-    
-    # Update version timestamp to trigger refresh for all users
-    keys['version'] = datetime.now().isoformat()
-    
-    if data.get('mapbox_key'):
-        keys['mapbox'] = {
-            'key': data['mapbox_key'],
-            'set_date': datetime.now().isoformat()
-        }
-    
-    if data.get('ip2location_key'):
-        keys['ip2location'] = {
-            'key': data['ip2location_key'],
-            'set_date': datetime.now().isoformat()
-        }
-    
-    save_shared_keys(keys)
-    return jsonify({"success": True, "message": "Keys updated successfully"})
+def set_shared_keys_route():
+    # Keys are now set via Render Environment Variables
+    # This endpoint just returns instructions
+    return jsonify({
+        "error": "Shared keys are now set via Render Environment Variables. Go to Render Dashboard > Your Service > Environment > Add these variables: SHARED_MAPBOX_KEY, SHARED_IP2LOCATION_KEY, SHARED_KEYS_SET_DATE"
+    }), 400
 
 
 @app.route('/check', methods=['POST'])
@@ -1315,7 +1308,7 @@ def check():
     target_address = data.get('target_address', '')
     
     # ENFORCE SHARED KEYS: If shared keys exist, ALWAYS use them (ignore client-sent keys)
-    shared_keys = load_shared_keys()
+    shared_keys = get_shared_keys()
     
     if 'mapbox' in shared_keys and shared_keys['mapbox'].get('key'):
         mapbox_key = shared_keys['mapbox']['key']
