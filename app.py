@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 app = Flask(__name__)
 
 # App version - increment this when pushing updates to force refresh
-APP_VERSION = '1.0.1'
+APP_VERSION = '1.0.3'
 
 # Shared API keys storage file
 SHARED_KEYS_FILE = '/tmp/shared_keys.json'
@@ -608,9 +608,11 @@ HTML_TEMPLATE = '''
     
     <script>
         // Client app version - must match server APP_VERSION
-        const CLIENT_APP_VERSION = '1.0.1';
+        const CLIENT_APP_VERSION = '1.0.3';
         
         let sharedKeysLoaded = { mapbox: false, ip2location: false };
+        // Store actual shared key values - these are what get used for API calls
+        let sharedKeyValues = { mapbox: null, ip2location: null };
         
         window.onload = async function() {
             // First try to load shared keys
@@ -633,8 +635,7 @@ HTML_TEMPLATE = '''
                 const storedVersion = localStorage.getItem('shared_keys_version');
                 if (sharedKeys.version && storedVersion && storedVersion !== sharedKeys.version) {
                     // Version changed! Clear everything and force refresh
-                    localStorage.removeItem('mapbox_api_key');
-                    localStorage.removeItem('ip2location_api_key');
+                    localStorage.clear();
                     localStorage.setItem('shared_keys_version', sharedKeys.version);
                     location.reload(true); // Force refresh from server
                     return;
@@ -646,22 +647,31 @@ HTML_TEMPLATE = '''
                 }
                 
                 if (sharedKeys.mapbox_key || sharedKeys.ip2location_key) {
+                    // SHARED KEYS EXIST - Clear localStorage and lock everything
+                    localStorage.removeItem('mapbox_api_key');
+                    localStorage.removeItem('ip2location_api_key');
+                    
                     document.getElementById('sharedKeyStatus').style.display = 'block';
-                    let timerHtml = '🔑 <strong>Shared Keys Active</strong> — ';
+                    let timerHtml = '🔑 <strong>Shared Keys Active (Locked)</strong> — ';
                     
                     if (sharedKeys.mapbox_key) {
-                        // Force set the value
-                        document.getElementById('mapboxKey').value = sharedKeys.mapbox_key;
-                        // Clear localStorage to prevent conflicts
-                        localStorage.removeItem('mapbox_api_key');
-                        // Make field read-only instead of hiding
+                        // Store the actual key value for API calls
+                        sharedKeyValues.mapbox = sharedKeys.mapbox_key;
+                        // Display masked key in field
+                        const maskedKey = sharedKeys.mapbox_key.substring(0, 10) + '••••••••••••••••';
+                        document.getElementById('mapboxKey').value = maskedKey;
+                        // Make field completely disabled and uneditable
+                        document.getElementById('mapboxKey').disabled = true;
                         document.getElementById('mapboxKey').readOnly = true;
-                        document.getElementById('mapboxKey').style.opacity = '0.7';
+                        document.getElementById('mapboxKey').style.opacity = '0.6';
                         document.getElementById('mapboxKey').style.cursor = 'not-allowed';
+                        document.getElementById('mapboxKey').style.backgroundColor = 'rgba(0,0,0,0.5)';
+                        document.getElementById('mapboxKey').style.pointerEvents = 'none';
+                        document.getElementById('mapboxKey').style.userSelect = 'none';
                         // Hide the save checkbox since it's shared
                         document.getElementById('saveKey').parentElement.style.display = 'none';
                         // Add shared indicator to label
-                        document.querySelector('#mapboxFieldGroup label').innerHTML = 'Mapbox API Key <span class="shared-badge">🔒 SHARED</span>';
+                        document.querySelector('#mapboxFieldGroup label').innerHTML = 'Mapbox API Key <span class="shared-badge">🔒 LOCKED</span>';
                         sharedKeysLoaded.mapbox = true;
                         
                         const days = sharedKeys.mapbox_days_remaining;
@@ -670,18 +680,23 @@ HTML_TEMPLATE = '''
                     }
                     
                     if (sharedKeys.ip2location_key) {
-                        // Force set the value
-                        document.getElementById('ip2locationKey').value = sharedKeys.ip2location_key;
-                        // Clear localStorage to prevent conflicts
-                        localStorage.removeItem('ip2location_api_key');
-                        // Make field read-only instead of hiding
+                        // Store the actual key value for API calls
+                        sharedKeyValues.ip2location = sharedKeys.ip2location_key;
+                        // Display masked key in field
+                        const maskedKey = sharedKeys.ip2location_key.substring(0, 8) + '••••••••••••';
+                        document.getElementById('ip2locationKey').value = maskedKey;
+                        // Make field completely disabled and uneditable
+                        document.getElementById('ip2locationKey').disabled = true;
                         document.getElementById('ip2locationKey').readOnly = true;
-                        document.getElementById('ip2locationKey').style.opacity = '0.7';
+                        document.getElementById('ip2locationKey').style.opacity = '0.6';
                         document.getElementById('ip2locationKey').style.cursor = 'not-allowed';
+                        document.getElementById('ip2locationKey').style.backgroundColor = 'rgba(0,0,0,0.5)';
+                        document.getElementById('ip2locationKey').style.pointerEvents = 'none';
+                        document.getElementById('ip2locationKey').style.userSelect = 'none';
                         // Hide the save checkbox since it's shared
                         document.getElementById('saveIp2Key').parentElement.style.display = 'none';
                         // Add shared indicator to label
-                        document.querySelector('#ip2locationFieldGroup label').innerHTML = 'IP2Location API Key <span class="shared-badge">🔒 SHARED</span>';
+                        document.querySelector('#ip2locationFieldGroup label').innerHTML = 'IP2Location API Key <span class="shared-badge">🔒 LOCKED</span>';
                         sharedKeysLoaded.ip2location = true;
                         
                         const days = sharedKeys.ip2location_days_remaining;
@@ -694,20 +709,6 @@ HTML_TEMPLATE = '''
                 }
             } catch (e) {
                 console.log('No shared keys available');
-            }
-            
-            // Fall back to localStorage ONLY if shared keys not loaded
-            if (!sharedKeysLoaded.mapbox) {
-                const savedKey = localStorage.getItem('mapbox_api_key');
-                if (savedKey) {
-                    document.getElementById('mapboxKey').value = savedKey;
-                }
-            }
-            if (!sharedKeysLoaded.ip2location) {
-                const savedIp2Key = localStorage.getItem('ip2location_api_key');
-                if (savedIp2Key) {
-                    document.getElementById('ip2locationKey').value = savedIp2Key;
-                }
             }
             
             // Periodically check for key updates (every 30 seconds)
@@ -734,10 +735,17 @@ HTML_TEMPLATE = '''
                 if (sharedKeys.version && storedVersion && storedVersion !== sharedKeys.version) {
                     // Keys changed! Show notification and refresh
                     alert('🔑 API keys have been updated. Page will refresh.');
-                    localStorage.removeItem('mapbox_api_key');
-                    localStorage.removeItem('ip2location_api_key');
+                    localStorage.clear();
                     localStorage.setItem('shared_keys_version', sharedKeys.version);
                     location.reload(true);
+                }
+                
+                // Also update the stored key values in case they changed
+                if (sharedKeys.mapbox_key) {
+                    sharedKeyValues.mapbox = sharedKeys.mapbox_key;
+                }
+                if (sharedKeys.ip2location_key) {
+                    sharedKeyValues.ip2location = sharedKeys.ip2location_key;
                 }
             } catch (e) {
                 // Silently fail
@@ -797,12 +805,11 @@ HTML_TEMPLATE = '''
         }
         
         async function checkProxy() {
-            const mapboxKey = document.getElementById('mapboxKey').value.trim();
-            const ip2locationKey = document.getElementById('ip2locationKey').value.trim();
+            // Use shared keys if available, otherwise fall back to input fields
+            const mapboxKey = sharedKeyValues.mapbox || document.getElementById('mapboxKey').value.trim();
+            const ip2locationKey = sharedKeyValues.ip2location || document.getElementById('ip2locationKey').value.trim();
             const proxyString = document.getElementById('proxyString').value.trim();
             const targetAddress = document.getElementById('targetAddress').value.trim();
-            const saveKey = document.getElementById('saveKey').checked;
-            const saveIp2Key = document.getElementById('saveIp2Key').checked;
             const resultsDiv = document.getElementById('results');
             const btn = document.getElementById('checkBtn');
             
@@ -819,19 +826,6 @@ HTML_TEMPLATE = '''
             if (!proxyString || !targetAddress) {
                 alert('Please fill in both proxy string and target address');
                 return;
-            }
-            
-            // Only save to localStorage if not using shared keys
-            if (!sharedKeysLoaded.mapbox && saveKey) {
-                localStorage.setItem('mapbox_api_key', mapboxKey);
-            } else if (!sharedKeysLoaded.mapbox) {
-                localStorage.removeItem('mapbox_api_key');
-            }
-            
-            if (!sharedKeysLoaded.ip2location && saveIp2Key) {
-                localStorage.setItem('ip2location_api_key', ip2locationKey);
-            } else if (!sharedKeysLoaded.ip2location) {
-                localStorage.removeItem('ip2location_api_key');
             }
             
             btn.disabled = true;
@@ -1319,8 +1313,19 @@ def check():
     data = request.json
     proxy_string = data.get('proxy_string', '')
     target_address = data.get('target_address', '')
-    mapbox_key = data.get('mapbox_key', '')
-    ip2location_key = data.get('ip2location_key', '')
+    
+    # ENFORCE SHARED KEYS: If shared keys exist, ALWAYS use them (ignore client-sent keys)
+    shared_keys = load_shared_keys()
+    
+    if 'mapbox' in shared_keys and shared_keys['mapbox'].get('key'):
+        mapbox_key = shared_keys['mapbox']['key']
+    else:
+        mapbox_key = data.get('mapbox_key', '')
+    
+    if 'ip2location' in shared_keys and shared_keys['ip2location'].get('key'):
+        ip2location_key = shared_keys['ip2location']['key']
+    else:
+        ip2location_key = data.get('ip2location_key', '')
     
     try:
         # Parse proxy string
